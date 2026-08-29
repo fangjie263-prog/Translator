@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "WSJ 金融精译",
+  "version": "1.1.4",
+  "description": "选中文字后生成 Prompt，并自动填入和发送到 WSJ 金融精译 GPT。",
+  "permissions": ["contextMenus", "tabs", "storage"],
+  "host_permissions": ["https://chatgpt.com/*", "https://*.chatgpt.com/*"],
+  "background": {"service_worker": "background.js"},
+  "content_scripts": [{
+    "matches": ["https://chatgpt.com/*", "https://*.chatgpt.com/*"],
+    "js": ["chatgpt-content.js"],
+    "run_at": "document_idle"
+  }]
+}

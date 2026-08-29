@@ -1,0 +1,9 @@
+backup-*/
+archive-v0.5/
+*.log
+.env
+.env.*
+node_modules/
+**/__pycache__/
+**pycache**/
+.DS_Store

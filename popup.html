@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WSJ 金融精译</title>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:20px;font-family:"Microsoft YaHei",Arial,sans-serif;background:#f6f7f9;color:#202124}h1{font-size:22px;margin:0 0 18px}.section{margin-bottom:16px}.label{font-size:13px;font-weight:700;margin-bottom:7px}.box,textarea{width:100%;background:#fff;border:1px solid #d8dce2;border-radius:8px;padding:12px;line-height:1.65;white-space:pre-wrap;word-break:break-word;font:inherit}.original{min-height:100px;max-height:180px;overflow:auto}.prompt-box{min-height:160px;max-height:260px;overflow:auto;font-size:12px;color:#555}.result-box{min-height:180px;max-height:330px;resize:vertical}.controls{display:grid;grid-template-columns:1fr 1fr;gap:10px}.controls label{font-size:13px;font-weight:700}.controls select{width:100%;margin-top:6px;padding:9px;border:1px solid #c9ced6;border-radius:7px;background:#fff;font:inherit}.settings{display:flex;gap:7px}.settings input{flex:1;min-width:0;padding:9px;border:1px solid #c9ced6;border-radius:7px;font-size:12px}.settings button{flex:0 0 82px}.buttons{display:flex;gap:8px;margin-top:10px}button{flex:1;padding:10px;border:0;border-radius:7px;cursor:pointer;font:inherit}button:hover{opacity:.86}#copyOpenButton{background:#1f2937;color:#fff}#copyPromptButton,#copyResultButton{background:#0f766e;color:#fff}#openGPTButton,#saveSettingsButton,#resetButton{background:#e7e9ed;color:#202124}.custom{width:100%;margin-top:8px;min-height:60px;resize:vertical}.status{margin-top:10px;color:#68707d;font-size:12px}.settings-note{margin-top:5px;color:#8a9099;font-size:11px}
+</style>
+</head>
+<body>
+<h1>WSJ 金融精译</h1>
+<div class="section"><div class="label">原文</div><div id="original" class="box original">正在读取……</div></div>
+<div class="section controls">
+<label>翻译模式<select id="mode"><option value="wsj">WSJ 金融精译</option><option value="news">财经新闻直译</option><option value="earnings">财报/业绩公告</option><option value="company">公司分析</option><option value="custom">自定义</option></select></label>
+<label>当前 GPT<select disabled><option>WSJ 金融精译</option></select></label>
+</div>
+<textarea id="customInstruction" class="custom" placeholder="输入额外翻译要求……" hidden></textarea>
+<div class="section"><div class="label">翻译 Prompt</div><div id="prompt" class="box prompt-box">正在生成 Prompt……</div><div class="buttons"><button id="copyOpenButton">复制 Prompt 并打开 GPT</button><button id="copyPromptButton">复制 Prompt</button></div><div class="buttons"><button id="openGPTButton">打开 WSJ 金融精译</button></div></div>
+<div class="section"><div class="label">GPT 链接配置</div><div class="settings"><input id="gptUrl" type="url"><button id="saveSettingsButton">保存配置</button></div><div class="settings-note">V1.0 不自动控制 ChatGPT；打开后请按 Ctrl+V 并发送。</div></div>
+<div class="section"><div class="label">中文译文</div><textarea id="result" class="result-box" placeholder="复制 Prompt 后，在 ChatGPT 中发送。获得译文后可粘贴到这里。"></textarea><div class="buttons"><button id="copyResultButton">复制译文</button><button id="resetButton">重新翻译</button></div></div>
+<div id="status" class="status">已获取选中文字。</div>
+<script src="popup.js"></script>
+</body>
+</html>
