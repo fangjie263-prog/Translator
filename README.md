@@ -1,22 +1,64 @@
-# WSJ 金融精译
+# PRA — Personal Research Assistant
+
+中文：个人研究助手
 
 当前版本：
 
-V1.1.5
+Manifest V1.1.5；PRA V1.3 task management update
 
-个人使用的 Chromium / Opera 浏览器扩展，用于将英文财经材料交给用户配置的 ChatGPT GPT 翻译。
+PRA 从原有财经翻译工具逐步扩展为个人投资研究助手。它将网页选中的材料或支持页面中的整篇文章，交给用户选择的 Custom GPT Processor 执行。
 
 ## 已实现
 
-### 1. 手动选择文字翻译
+### 1. 输入与 Article Provider
 
-在支持的文章页面中选择英文，右键选择“WSJ 金融精译”，即可启动 ChatGPT 翻译流程。
+支持中文、英文、财经新闻、公司材料、行业材料、网页文章和研究笔记。手动选择文字时使用 `sourceType = "selection"`；可靠识别全文时使用 `sourceType = "article"`，统一保存为 `sourceText`。
 
-### 2. 全文翻译
+当前 Article Provider 兼容：
 
-支持 ResearchReader / Laxinwen 当前文章。点击文章自己的“复制全文”后，不需要重新拖选文字，直接右键选择“WSJ 金融精译”即可。插件通过 Article Provider 获取当前文章全文。
+- ResearchReader HTML
+- ResearchReader Portable HTTP Reader
+- Laxinwen Portable HTTP Reader
 
-### 3. Article Provider
+文章正文优先读取 `[data-copy-role="original"]`，并尽量保留标题、作者、副标题和正文，同时排除导航、工具按钮、footer、脚本和图片按钮。
+
+### 2. Research Task
+
+左侧 Research Task 决定“做什么”，当前正式提供 9 项：
+
+1. 财经精译：专业、忠实地转换财经材料。
+2. 财经文章速读：提炼信息增量、关键数字和研究价值。
+3. 投资逻辑分析：重建投资逻辑、因果链和待验证假设。
+4. 基金经理视角：分析盈利、预期、估值和上下行变量。
+5. 投资逻辑质疑：检查漏洞、隐藏假设和替代解释。
+6. 公司 / 行业研究：建立研究对象、框架和研究缺口。
+7. 事实与数据核查：核验重要事实、数字、口径和证据等级。
+8. 财务 / 盈利 / 估值分析：分析盈利驱动、情景和估值隐含预期。
+9. 研究跟进 / 下一步行动：形成可执行的 P0/P1/P2 研究计划。
+
+前 9 项是受保护的系统任务，拥有稳定 ID、完整任务 Prompt 和默认 GPT Processor 关系；用户还可以通过“＋新增研究任务”持续建立自己的任务。自定义任务可以保存、编辑、删除，并为每项任务选择独立的默认 Processor。系统任务不会被自定义任务覆盖。
+
+### 3. GPT Processor
+
+右侧 GPT Processor 决定“谁来做”。Research Task 与 GPT Processor 是两个独立维度；默认联动只是推荐，用户可以手动选择其他 GPT，也可以把当前 GPT 设为某项任务的默认处理器。
+
+支持：
+
+- 预置 GPT；
+- 新增、编辑、删除自定义 GPT；
+- 修改 GPT URL；
+- 严格校验 `https://chatgpt.com/g/...`；
+- 使用 `chrome.storage.local` 持久化；
+- 通过 `gptPresetsInitialized` 避免更新覆盖用户配置；
+- 删除 GPT 时自动修复相关任务的默认 Processor 引用。
+
+### 4. 自定义 Research Task
+
+- 自定义任务保存在 `chrome.storage.local`，扩展重载、浏览器重启和更新不会覆盖。
+- 自定义任务与 GPT Processor 解耦，可以分别选择和修改默认 Processor。
+- 系统预置任务只读且不可删除；自定义任务可编辑、删除。
+
+### 5. Article Provider 数据结构
 
 统一文章结构：
 
@@ -32,25 +74,18 @@ V1.1.5
 }
 ```
 
-当前支持 ResearchReader 和 Laxinwen。
-
-### 4. 两种输入模式
-
-- 手动选择：`sourceType = "selection"`
-- 全文：`sourceType = "article"`
-
-两种模式最终统一进入 `sourceText` 翻译流程。
-
-### 5. ChatGPT 自动提交
+### 6. ChatGPT 自动提交
 
 插件等待输入框，填入 Prompt，等待 Send button 可用后执行 `button.click()`。当前版本只自动提交 Prompt，不自动读取 ChatGPT 回复。
 
 ## 工作流
 
-1. 在支持的页面中选择英文，或先点击 ResearchReader / Laxinwen 的“复制全文”。
+1. 在网页中选择文字，或在支持的 Reader 页面使用全文入口。
 2. 右键选择“WSJ 金融精译”。
-3. 插件生成并填入 Prompt，打开用户配置的 ChatGPT GPT。
-4. 等待输入框和 Send button 可用后自动提交。
+3. 在左侧选择 Research Task。
+4. 右侧自动推荐默认 GPT，用户可以手动更换。
+5. 插件生成任务 Prompt，打开对应 ChatGPT GPT。
+6. 等待输入框和 Send button 可用后自动提交。
 
 ## ResearchReader Portable HTTP Reader
 
@@ -84,17 +119,17 @@ ChatGPT 页面为：
 
 插件不使用 `<all_urls>`，也不声称支持所有网站。
 
-## 测试状态
+## 兼容性与测试状态
 
 以下状态已经确认：
 
-- 手动选择文字翻译：成功
-- ResearchReader 全文翻译：成功
-- Laxinwen 全文翻译链路：代码已实现；未将其表述为最终 Opera 端到端实测成功
-- ChatGPT 自动提交：成功
-- ResearchReader Portable HTTP Reader：成功
-- Portable HTTP 资源 200/404：已验证
-- ResearchReader 测试：108 passed
+- V1.1.4 ChatGPT 自动提交：已在 Opera 中实际验证成功。
+- 手动选择文字链路：已实现并保留。
+- ResearchReader 全文链路：已实现并测试。
+- Laxinwen 全文链路：代码已实现，未将其表述为最终 Opera 端到端实测成功。
+- ResearchReader Portable HTTP Reader：已验证。
+
+PRA V1.3 仍在开发中；9 项 Research Task 与 Processor 默认联动已加入代码，完整 Opera 端到端覆盖仍需继续验证。
 
 ## 安装 / 更新
 
@@ -102,14 +137,12 @@ ChatGPT 页面为：
 
 ## 版本历史
 
-### V1.1.5
+### PRA V1.3 development
 
-- 支持 ResearchReader / Laxinwen Article Provider
-- 支持复制全文后直接调用 WSJ 金融精译
-- 支持全文 `sourceText` 统一进入翻译流程
-- 修复 Context Menu 全文模式 `tab.id` 获取问题
-- 保持原有 ChatGPT 自动提交机制
-- 支持 ResearchReader Portable HTTP Reader
+- 增加 9 项 Research Task 配置。
+- 增加 Task 与 GPT Processor 的默认联动和持久化。
+- 支持将已选全文可靠识别为 Article Provider 输入。
+- 保持 V1.1.4 ChatGPT 自动提交机制不变。
 
 ## 版本管理
 

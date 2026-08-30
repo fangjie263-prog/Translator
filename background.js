@@ -7,6 +7,17 @@ const DEFAULT_PROCESSORS = [
     { id: "market-analysis-gpt", name: "Market Analysis GPT", url: "https://chatgpt.com/g/g-iPIqg3Sf1-market-analysis-gpt", type: "custom_gpt" },
     { id: "10-k-wizard", name: "10-K Wizard", url: "https://chatgpt.com/g/g-S0dTMpczx-10-k-wizard", type: "custom_gpt" }
 ];
+const DEFAULT_TASK_DEFAULTS = {
+    translation: "builtin-translation",
+    "article-speed-read": "investment-research-assistant",
+    "investment-logic": "equity-research-analyst",
+    "fund-manager": "investment-research-assistant",
+    "logic-critique": "equity-research-analyst",
+    "company-industry": "investment-research-assistant",
+    "fact-check": "investment-research-assistant",
+    "financial-valuation": "10-k-wizard",
+    "research-follow-up": "investment-research-assistant"
+};
 let popupWindowId = null;
 const sentTabs = new Set();
 
@@ -20,7 +31,7 @@ function createContextMenu() {
         }
         chrome.contextMenus.create({
             id: "wsj-translate",
-            title: "WSJ 金融精译",
+            title: "PRA · 个人研究助手",
             contexts: ["all"]
         }, () => {
             if (chrome.runtime.lastError) {
@@ -42,12 +53,26 @@ async function ensureProcessors() {
     await chrome.storage.local.set({ gptProcessors: processors, gptPresetsInitialized: true, selectedProcessorId: "builtin-translation" });
     return processors;
 }
+async function ensureTaskDefaults() {
+    const saved = await chrome.storage.local.get("researchTaskDefaults");
+    const current = saved.researchTaskDefaults && typeof saved.researchTaskDefaults === "object" ? saved.researchTaskDefaults : {};
+    const merged = { ...DEFAULT_TASK_DEFAULTS, ...current };
+    if (JSON.stringify(current) !== JSON.stringify(merged)) await chrome.storage.local.set({ researchTaskDefaults: merged });
+    return merged;
+}
+async function getCustomTasks() {
+    const saved = await chrome.storage.local.get("customResearchTasks");
+    return Array.isArray(saved.customResearchTasks)
+        ? saved.customResearchTasks.filter((task) => task && task.type === "custom" && typeof task.id === "string" && typeof task.name === "string" && typeof task.prompt === "string")
+        : [];
+}
 
 chrome.runtime.onInstalled.addListener(async () => {
     createContextMenu();
     const saved = await chrome.storage.local.get("gptUrl");
     if (!saved.gptUrl) await chrome.storage.local.set({ gptUrl: DEFAULT_GPT_URL });
     await ensureProcessors();
+    await ensureTaskDefaults();
 });
 chrome.runtime.onStartup.addListener(() => {
     createContextMenu();
@@ -79,30 +104,21 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     let articleContext = null;
     let sourceType = "selection";
     let sourceText = selectedText;
-    if (!selectedText.trim()) {
-        console.log("[WSJ] no selection, requesting article context");
-        try {
-            console.log("[WSJ] getArticleContext sendMessage", { tabId: tab.id });
-            articleContext = await chrome.tabs.sendMessage(tab.id, { type: "getArticleContext" });
-            console.log("[WSJ] getArticleContext response", {
-                source: articleContext?.source || null,
-                title: articleContext?.title || null,
-                articleId: articleContext?.articleId || null,
-                textLength: (articleContext?.text || articleContext?.sourceText || articleContext?.articleText || "").length
-            });
-        } catch (error) {
-            console.error("[WSJ] getArticleContext failed:", error.message);
-        }
+    try {
+        console.log("[WSJ] requesting Article Provider context", { selectedLength: selectedText.length });
+        articleContext = await chrome.tabs.sendMessage(tab.id, { type: "getArticleContext", selectedText });
         const articleText = articleContext?.text || articleContext?.sourceText || articleContext?.articleText || "";
-        if (articleText.trim()) {
+        if ((articleContext?.type === "article" || articleContext?.sourceType === "article") && articleText.trim()) {
             sourceType = "article";
             sourceText = articleText;
-            console.log("[WSJ] article sourceText", { sourceType, textLength: sourceText.length });
-        } else {
-            console.warn("[WSJ] Article Provider returned no usable article context", { page: tab?.url || "" });
-            console.warn("[WSJ] 请先选择文字，或点击‘复制全文’后再使用 WSJ 金融精译。");
-            return;
         }
+    } catch (error) {
+        console.warn("[WSJ] Article Provider unavailable; using selection", error.message);
+    }
+    if (sourceType !== "article" && !selectedText.trim()) {
+        console.warn("[WSJ] Article Provider returned no usable article context", { page: tab?.url || "" });
+        console.warn("[WSJ] 请先选择文字，或点击‘复制全文’后再使用 WSJ 金融精译。");
+        return;
     }
 
     const requestId = crypto.randomUUID();
@@ -112,6 +128,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         sourceText,
         sourceType,
         articleContext,
+        taskId: "translation",
         mode: "wsj",
         customInstruction: "",
         createdAt: Date.now()
@@ -165,8 +182,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return true;
     }
     if (message.type === "getProcessors") {
-        Promise.all([ensureProcessors(), chrome.storage.local.get("selectedProcessorId")]).then(([processors, saved]) => {
-            sendResponse({ processors, selectedProcessorId: saved.selectedProcessorId || "builtin-translation" });
+        Promise.all([ensureProcessors(), ensureTaskDefaults(), getCustomTasks(), chrome.storage.local.get("selectedProcessorId")]).then(([processors, taskDefaults, customTasks, saved]) => {
+            sendResponse({ processors, taskDefaults, customTasks, selectedProcessorId: saved.selectedProcessorId || "builtin-translation" });
         });
         return true;
     }
@@ -177,8 +194,57 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         } else if (processors.some((item) => item.type === "custom_gpt" && !validGptUrl(item.url))) {
             sendResponse({ ok: false, error: "GPT 链接无效，应为 chatgpt.com/g/ 开头的链接。" });
         } else {
-            chrome.storage.local.set({ gptProcessors: processors, gptPresetsInitialized: true }).then(() => sendResponse({ ok: true }));
+            chrome.storage.local.get("researchTaskDefaults").then((saved) => {
+                const taskDefaults = { ...DEFAULT_TASK_DEFAULTS, ...(saved.researchTaskDefaults || {}) };
+                const validIds = new Set(processors.map((item) => item.id));
+                for (const taskId of Object.keys(taskDefaults)) {
+                    if (!validIds.has(taskDefaults[taskId])) {
+                        const recommended = DEFAULT_TASK_DEFAULTS[taskId];
+                        taskDefaults[taskId] = validIds.has(recommended) ? recommended : "builtin-translation";
+                    }
+                }
+                return chrome.storage.local.get("customResearchTasks").then((customSaved) => {
+                    const customTasks = Array.isArray(customSaved.customResearchTasks) ? customSaved.customResearchTasks.map((task) => ({
+                        ...task,
+                        defaultProcessorId: validIds.has(task.defaultProcessorId) ? task.defaultProcessorId : "builtin-translation"
+                    })) : [];
+                    return chrome.storage.local.set({ gptProcessors: processors, gptPresetsInitialized: true, researchTaskDefaults: taskDefaults, customResearchTasks: customTasks }).then(() => sendResponse({ ok: true, taskDefaults, customTasks }));
+                });
+            });
         }
+        return true;
+    }
+    if (message.type === "saveTaskDefault") {
+        const taskId = message.taskId || "";
+        const processorId = message.processorId || "";
+        Promise.all([ensureProcessors(), ensureTaskDefaults()]).then(([processors, taskDefaults]) => {
+            if (!DEFAULT_TASK_DEFAULTS[taskId]) return sendResponse({ ok: false, error: "Research Task 无效。" });
+            if (!processors.some((item) => item.id === processorId)) return sendResponse({ ok: false, error: "GPT 处理器不存在。" });
+            const next = { ...taskDefaults, [taskId]: processorId };
+            chrome.storage.local.set({ researchTaskDefaults: next }).then(() => sendResponse({ ok: true, taskDefaults: next }));
+        });
+        return true;
+    }
+    if (message.type === "saveResearchTask") {
+        const task = message.task;
+        Promise.all([ensureProcessors(), getCustomTasks()]).then(([processors, customTasks]) => {
+            if (!task || !task.id || !task.name?.trim() || !task.prompt?.trim()) return sendResponse({ ok: false, error: "研究任务名称和 Prompt 不能为空。" });
+            if (task.type !== "custom") return sendResponse({ ok: false, error: "系统 Research Task 不能被覆盖。" });
+            if (Object.prototype.hasOwnProperty.call(DEFAULT_TASK_DEFAULTS, task.id)) return sendResponse({ ok: false, error: "系统 Research Task 不能被覆盖。" });
+            if (!processors.some((item) => item.id === task.defaultProcessorId)) return sendResponse({ ok: false, error: "默认 AI Processor 不存在。" });
+            const nextTask = { id: task.id, name: task.name.trim(), prompt: task.prompt.trim(), defaultProcessorId: task.defaultProcessorId, type: "custom" };
+            const next = customTasks.some((item) => item.id === nextTask.id)
+                ? customTasks.map((item) => item.id === nextTask.id ? nextTask : item)
+                : [...customTasks, nextTask];
+            chrome.storage.local.set({ customResearchTasks: next }).then(() => sendResponse({ ok: true, task: nextTask, customTasks: next }));
+        });
+        return true;
+    }
+    if (message.type === "deleteResearchTask") {
+        getCustomTasks().then((customTasks) => {
+            const next = customTasks.filter((task) => task.id !== message.taskId);
+            chrome.storage.local.set({ customResearchTasks: next }).then(() => sendResponse({ ok: true, customTasks: next }));
+        });
         return true;
     }
     if (message.type === "saveSelectedProcessor") {

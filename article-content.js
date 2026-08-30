@@ -8,17 +8,38 @@
         const text = element?.innerText || element?.textContent || "";
         return text.replace(/\u00a0/g, " ").replace(/\n{3,}/g, "\n\n").trim();
     };
+    const normalized = (value) => textOf({ innerText: value }).replace(/\s+/g, " ").trim();
+    const selectionWithin = (element, selection) => {
+        if (!selection?.rangeCount) return false;
+        const range = selection.getRangeAt(0);
+        const node = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+            ? range.commonAncestorContainer
+            : range.commonAncestorContainer.parentElement;
+        return Boolean(node && element.contains(node));
+    };
+    const isFullArticleSelection = (article, articleText, selectedText, selection) => {
+        if (!selectionWithin(article, selection)) return false;
+        const selected = normalized(selectedText);
+        const full = normalized(articleText);
+        if (!selected || !full) return false;
+        const ratio = selected.length / full.length;
+        const head = full.slice(0, 100);
+        const tail = full.slice(-100);
+        const coversEdges = selected.includes(head.slice(0, 60)) && selected.includes(tail.slice(-60));
+        return ratio >= 0.75 && coversEdges;
+    };
 
     const providers = [
         {
             source: "researchreader",
-            current: [".article.copy-selected[data-article-index]"],
+            current: [".article.copy-selected[data-article-index]", ".article[data-article-index]"],
             containers: [".article[data-article-index]", "article[data-article-index]"],
         },
         {
             source: "laxinwen",
             current: [
                 "section.article.copy-selected:not([data-article-index])",
+                "section.article:not([data-article-index])",
                 ".reader.copy-selected",
                 ".page.copy-selected"
             ],
@@ -58,7 +79,7 @@
         return "";
     };
 
-    const toArticle = (provider, element) => {
+    const toArticle = (provider, element, selectedText, selection) => {
         if (!element) return null;
         const title = firstText(element, [".article-title", ".page-title", "h1", "h2"]);
         const author = firstText(element, [".byline", ".article-author", ".author"]);
@@ -70,6 +91,7 @@
             : body;
         if (!text.trim()) return null;
         return {
+            type: "article",
             source: provider.source,
             title,
             author,
@@ -77,10 +99,12 @@
             text,
             url: window.location.href,
             articleId: element.id || "",
+            selectionRatio: selectedText ? normalized(selectedText).length / Math.max(normalized(text).length, 1) : 0,
         };
     };
 
-    const getCurrentArticle = () => {
+    const getCurrentArticle = (selectedText = "") => {
+        const selection = window.getSelection();
         console.log("[WSJ] getCurrentArticle started", {
             url: window.location.href,
             articleCount: document.querySelectorAll(".article").length,
@@ -88,19 +112,22 @@
         });
         for (const provider of providers) {
             for (const selector of provider.current) {
-                const article = toArticle(provider, document.querySelector(selector));
-                if (article) {
-                    console.log("[WSJ] ResearchReader provider matched", {
-                        provider: provider.source,
-                        articleId: article.articleId,
-                        title: article.title,
-                        textLength: article.text.length
-                    });
-                    return article;
+                for (const element of document.querySelectorAll(selector)) {
+                    const article = toArticle(provider, element, selectedText, selection);
+                    if (article && (!selectedText || isFullArticleSelection(element, article.text, selectedText, selection))) {
+                        console.log("[WSJ] Article Provider matched", {
+                            provider: provider.source,
+                            articleId: article.articleId,
+                            title: article.title,
+                            textLength: article.text.length
+                        });
+                        return article;
+                    }
                 }
             }
-            const byHash = toArticle(provider, findByHash(provider));
-            if (byHash) {
+            const hashElement = findByHash(provider);
+            const byHash = toArticle(provider, hashElement, selectedText, selection);
+            if (byHash && (!selectedText || isFullArticleSelection(hashElement, byHash.text, selectedText, selection))) {
                 console.log("[WSJ] provider matched by hash", {
                     provider: provider.source,
                     articleId: byHash.articleId,
@@ -121,11 +148,13 @@
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (message.type !== "getArticleContext") return;
         console.log("[WSJ] getArticleContext received");
-        const article = getCurrentArticle();
+        const article = getCurrentArticle(message.selectedText || "");
         const response = {
             ...(article || {}),
+            type: article ? "article" : "selection",
+            sourceType: article ? "article" : "selection",
             articleText: article?.text || null,
-            selectionText: window.getSelection()?.toString() || "",
+            selectionText: message.selectedText || window.getSelection()?.toString() || "",
         };
         console.log("[WSJ] getArticleContext response", {
             source: response.source || null,

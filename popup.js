@@ -1,7 +1,12 @@
 const requestId = new URLSearchParams(window.location.search).get("requestId") || "";
 let selectedText = "";
 let processors = [];
+let researchTasks = [];
+let taskDefaults = {};
+let customTasks = [];
 let selectedProcessorId = "builtin-translation";
+let editingTaskId = null;
+let lastTaskId = "translation";
 let editingProcessorId = null;
 
 const originalElement = document.getElementById("original");
@@ -16,18 +21,18 @@ const processorEditor = document.getElementById("processorEditor");
 const processorName = document.getElementById("processorName");
 const processorUrl = document.getElementById("processorUrl");
 const processorError = document.getElementById("processorError");
-
-const prompts = {
-    wsj: `你是一名资深英文财经媒体翻译，同时具有多年中国买方基金研究经验。\n\n请将下面的英文财经材料翻译成准确、自然、专业的中文。\n\n要求：\n1. 不机械逐字翻译，要符合中文财经媒体和中国买方研究员的表达习惯。\n2. 保持原文事实、逻辑、语气和确定性程度。\n3. 不添加原文不存在的事实、观点或推测。\n4. 所有数字、百分比、日期、金额、单位必须准确。\n5. 金融术语优先采用中国资本市场和财经媒体常用表达。\n6. 根据上下文选择最自然的中文表达，不机械套用固定译法。\n7. 如果英文存在歧义，不擅自补充原文没有的信息。\n8. 只输出最终中文译文，不解释翻译过程。\n9. 保持原文段落结构。\n10. 专有名词有明确通行中文译名时使用通行译名，否则保留英文。\n\n请翻译下面的原文：`,
-    news: `请将下面的英文财经新闻翻译成准确、自然的中文。\n\n要求：\n1. 忠实保留事实、数字、时间、因果关系和语气。\n2. 使用自然的财经新闻表达，适度润色但不扩写。\n3. 不添加原文没有的信息或判断。\n4. 只输出中文译文，保持段落结构。\n\n原文：`,
-    earnings: `请将下面的英文财报或业绩公告翻译成专业中文。\n\n要求：\n1. 准确保留所有财务指标、数字、单位、同比、环比和日期。\n2. 准确处理 revenue、margin、guidance、cash flow、capex、EBITDA 等术语。\n3. 使用中国上市公司公告和证券研究报告的自然表达。\n4. 不增加分析，不改变管理层语气。\n5. 只输出中文译文，保持段落结构。\n\n原文：`,
-    company: `请将下面的英文公司材料翻译成适合中国买方研究员阅读的专业中文。\n\n重点准确处理公司战略、竞争格局、经营指标、市场份额、盈利能力和管理层表述。保持原文事实、数字、逻辑和确定性，不增加投资判断，只输出中文译文。\n\n原文：`
-};
+const taskEditor = document.getElementById("taskEditor");
+const taskName = document.getElementById("taskName");
+const taskPrompt = document.getElementById("taskPrompt");
+const taskProcessorSelect = document.getElementById("taskProcessorSelect");
+const taskError = document.getElementById("taskError");
+const editTaskButton = document.getElementById("editTaskButton");
+const deleteTaskButton = document.getElementById("deleteTaskButton");
 
 function buildPrompt() {
-    const base = prompts[modeElement.value] || prompts.wsj;
-    const custom = modeElement.value === "custom" ? `\n\n额外要求：\n${customInstructionElement.value.trim()}` : "";
-    return `${base}${custom}\n\n${selectedText}\n\n不要输出 Prompt，不要解释，只输出中文译文。`;
+    const task = researchTasks.find((item) => item.id === modeElement.value) || researchTasks[0];
+    const custom = customInstructionElement.value.trim() ? `\n\n【补充要求】\n${customInstructionElement.value.trim()}` : "";
+    return `${task?.prompt || ""}${custom}\n\n【用户材料】\n${selectedText}`;
 }
 function updatePrompt() { promptElement.textContent = buildPrompt(); }
 function showStatus(text) { statusElement.textContent = text; }
@@ -56,6 +61,69 @@ function renderProcessors() {
         remove.onclick = () => removeProcessor(item.id);
         row.append(label, edit, remove);
         processorList.append(row);
+    });
+    if (researchTasks.length) renderResearchTasks();
+}
+function renderResearchTasks() {
+    const current = lastTaskId;
+    modeElement.replaceChildren();
+    researchTasks.forEach((task) => modeElement.add(new Option(task.name, task.id)));
+    modeElement.add(new Option("────────────", "__separator__"));
+    modeElement.add(new Option("＋ 新增研究任务", "__new__"));
+    modeElement.value = researchTasks.some((task) => task.id === current) ? current : (researchTasks[0]?.id || "translation");
+    const custom = customTasks.some((task) => task.id === modeElement.value);
+    editTaskButton.hidden = !custom;
+    deleteTaskButton.hidden = !custom;
+    taskProcessorSelect.replaceChildren(...processors.map((item) => new Option(item.name, item.id)));
+}
+function applyTaskDefault() {
+    const task = researchTasks.find((item) => item.id === modeElement.value);
+    const processorId = taskDefaults[task?.id] || task?.defaultProcessorId;
+    if (!processorId || !processors.some((item) => item.id === processorId)) return;
+    selectedProcessorId = processorId;
+    processorSelect.value = processorId;
+    sendMessage({ type: "saveSelectedProcessor", processorId });
+}
+function openTaskEditor(task = null) {
+    editingTaskId = task?.id || null;
+    taskName.value = task?.name || "";
+    taskPrompt.value = task?.prompt || "";
+    taskProcessorSelect.value = task?.defaultProcessorId || selectedProcessorId || processors[0]?.id || "";
+    taskError.textContent = "";
+    taskEditor.hidden = false;
+    taskName.focus();
+}
+function closeTaskEditor() { taskEditor.hidden = true; editingTaskId = null; taskError.textContent = ""; }
+function saveTask() {
+    const name = taskName.value.trim();
+    const prompt = taskPrompt.value.trim();
+    const defaultProcessorId = taskProcessorSelect.value;
+    if (!name || !prompt) return taskError.textContent = "任务名称和 Research Prompt 不能为空。";
+    const task = { id: editingTaskId || (crypto.randomUUID ? crypto.randomUUID() : "task-" + Date.now()), name, prompt, defaultProcessorId, type: "custom" };
+    sendMessage({ type: "saveResearchTask", task }, (result) => {
+        if (!result?.ok) return taskError.textContent = result?.error || "任务保存失败。";
+        customTasks = result.customTasks || customTasks;
+        researchTasks = [...researchTasks.filter((item) => item.type === "system"), ...customTasks];
+        lastTaskId = task.id;
+        renderResearchTasks();
+        applyTaskDefault();
+        closeTaskEditor();
+        updatePrompt();
+        showStatus("Research Task 已保存。" );
+    });
+}
+function deleteTask() {
+    const task = customTasks.find((item) => item.id === modeElement.value);
+    if (!task || !confirm(`确定删除研究任务“${task.name}”吗？`)) return;
+    sendMessage({ type: "deleteResearchTask", taskId: task.id }, (result) => {
+        if (!result?.ok) return showStatus(result?.error || "任务删除失败。" );
+        customTasks = result.customTasks || [];
+        researchTasks = researchTasks.filter((item) => item.id !== task.id);
+        lastTaskId = researchTasks[0]?.id || "translation";
+        renderResearchTasks();
+        applyTaskDefault();
+        updatePrompt();
+        showStatus("Research Task 已删除。" );
     });
 }
 function openEditor(item = null) {
@@ -89,6 +157,9 @@ function removeProcessor(id) {
     sendMessage({ type: "saveProcessors", processors }, (result) => {
         if (!result?.ok) return showStatus(result?.error || "删除失败。" );
         if (selectedProcessorId === id) selectedProcessorId = "builtin-translation";
+        taskDefaults = result.taskDefaults || taskDefaults;
+        customTasks = result.customTasks || customTasks;
+        researchTasks = [...researchTasks.filter((item) => item.type === "system"), ...customTasks];
         sendMessage({ type: "saveSelectedProcessor", processorId: selectedProcessorId });
         renderProcessors();
         showStatus("GPT 已删除。" );
@@ -97,10 +168,11 @@ function removeProcessor(id) {
 
 async function load() {
     if (!requestId) throw new Error("翻译请求不存在，请重新选择网页文字。");
-    const [request, settings, processorSettings] = await Promise.all([
+    const [request, settings, processorSettings, tasks] = await Promise.all([
         new Promise((resolve) => sendMessage({ type: "getRequest", requestId }, resolve)),
         new Promise((resolve) => sendMessage({ type: "getSettings" }, resolve)),
-        new Promise((resolve) => sendMessage({ type: "getProcessors" }, resolve))
+        new Promise((resolve) => sendMessage({ type: "getProcessors" }, resolve)),
+        window.loadPraResearchTasks()
     ]);
     if (!request) throw new Error("翻译请求已失效，请重新选择文字。");
     selectedText = request.selectedText || "";
@@ -115,16 +187,40 @@ async function load() {
         articleId: request.articleId || request.articleContext?.articleId || null
     });
     processors = processorSettings?.processors || [{ id: "builtin-translation", name: "金融精译", type: "builtin", url: settings?.gptUrl || "" }];
+    researchTasks = tasks || [];
+    taskDefaults = processorSettings?.taskDefaults || {};
+    customTasks = processorSettings?.customTasks || [];
+    researchTasks = [...researchTasks, ...customTasks];
     selectedProcessorId = processorSettings?.selectedProcessorId || "builtin-translation";
+    renderResearchTasks();
     renderProcessors();
     originalElement.textContent = selectedText || "没有获取到选中的文字。";
-    modeElement.value = request.mode || "wsj";
+    const requestedTaskId = request.taskId || (request.mode === "wsj" ? "translation" : request.mode);
+    lastTaskId = researchTasks.some((task) => task.id === requestedTaskId) ? requestedTaskId : (researchTasks[0]?.id || "translation");
+    modeElement.value = lastTaskId;
+    applyTaskDefault();
+    showStatus(request.sourceType === "article"
+        ? `已识别完整文章${request.articleContext?.title ? "：" + request.articleContext.title : "。"}`
+        : "已获取选中文字。" );
     updatePrompt();
     console.log("[WSJ] popup prompt length", buildPrompt().length);
 }
 
 modeElement.addEventListener("change", () => {
-    customInstructionElement.hidden = modeElement.value !== "custom";
+    if (modeElement.value === "__new__") {
+        modeElement.value = lastTaskId;
+        openTaskEditor();
+        return;
+    }
+    if (modeElement.value === "__separator__") {
+        modeElement.value = lastTaskId;
+        return;
+    }
+    lastTaskId = modeElement.value;
+    const isCustom = customTasks.some((task) => task.id === lastTaskId);
+    editTaskButton.hidden = !isCustom;
+    deleteTaskButton.hidden = !isCustom;
+    applyTaskDefault();
     updatePrompt();
 });
 customInstructionElement.addEventListener("input", updatePrompt);
@@ -137,6 +233,29 @@ processorSelect.addEventListener("change", () => {
 document.getElementById("addProcessorButton").addEventListener("click", () => openEditor());
 document.getElementById("saveProcessorButton").addEventListener("click", saveProcessor);
 document.getElementById("cancelProcessorButton").addEventListener("click", closeEditor);
+document.getElementById("setDefaultProcessorButton").addEventListener("click", () => {
+    const customTask = customTasks.find((task) => task.id === modeElement.value);
+    if (customTask) {
+        sendMessage({ type: "saveResearchTask", task: { ...customTask, defaultProcessorId: selectedProcessorId } }, (result) => {
+            if (!result?.ok) return showStatus(result?.error || "任务默认 GPT 保存失败。" );
+            customTasks = result.customTasks || customTasks;
+            researchTasks = [...researchTasks.filter((item) => item.type === "system"), ...customTasks];
+            renderResearchTasks();
+            applyTaskDefault();
+            showStatus("已将当前 GPT 设为此 Research Task 默认。" );
+        });
+        return;
+    }
+    sendMessage({ type: "saveTaskDefault", taskId: modeElement.value, processorId: selectedProcessorId }, (result) => {
+        if (!result?.ok) return showStatus(result?.error || "任务默认 GPT 保存失败。" );
+        taskDefaults = result.taskDefaults || taskDefaults;
+        showStatus("已将当前 GPT 设为此 Research Task 默认。" );
+    });
+});
+editTaskButton.addEventListener("click", () => openTaskEditor(customTasks.find((task) => task.id === modeElement.value)));
+deleteTaskButton.addEventListener("click", deleteTask);
+document.getElementById("saveTaskButton").addEventListener("click", saveTask);
+document.getElementById("cancelTaskButton").addEventListener("click", closeTaskEditor);
 
 async function copyPrompt() {
     await navigator.clipboard.writeText(buildPrompt());
