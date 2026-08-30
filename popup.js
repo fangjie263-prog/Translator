@@ -34,11 +34,22 @@ async function load() {
     ]);
     if (!request) throw new Error("翻译请求已失效，请重新选择文字。");
     selectedText = request.selectedText || "";
+    console.log("[WSJ] popup sourceType", request.sourceType || null);
+    console.log("[WSJ] popup sourceText length", (request.sourceText || "").length);
+    console.log("[WSJ] popup selectedText length", selectedText.length);
+    console.log("[WSJ] popup article metadata", {
+        title: request.title || request.articleContext?.title || null,
+        author: request.author || request.articleContext?.author || null,
+        subtitle: request.subtitle || request.articleContext?.subtitle || null,
+        url: request.url || request.articleContext?.url || null,
+        articleId: request.articleId || request.articleContext?.articleId || null
+    });
     gptUrl = settings?.gptUrl || "";
     gptUrlElement.value = gptUrl;
     originalElement.textContent = selectedText || "没有获取到选中的文字。";
     modeElement.value = request.mode || "wsj";
     updatePrompt();
+    console.log("[WSJ] popup prompt length", buildPrompt().length);
 }
 
 modeElement.addEventListener("change", () => {
