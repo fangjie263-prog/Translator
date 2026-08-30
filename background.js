@@ -1,4 +1,12 @@
 const DEFAULT_GPT_URL = "https://chatgpt.com/g/g-6a93053024688191a8052b050c3b114c-wsj-jin-rong-jing-yi";
+const DEFAULT_PROCESSORS = [
+    { id: "builtin-translation", name: "金融精译", type: "builtin", url: DEFAULT_GPT_URL },
+    { id: "investment-research-assistant", name: "Investment Research Assistant", url: "https://chatgpt.com/g/g-LSloWvsWy-investment-research-assistant", type: "custom_gpt" },
+    { id: "equity-research-analyst", name: "Equity Research Analyst", url: "https://chatgpt.com/g/g-X6FymI6XX-equity-research-analyst-generative-ai-persona", type: "custom_gpt" },
+    { id: "financial-news-editor", name: "Financial News Editor", url: "https://chatgpt.com/g/g-70OQniJ66-financial-news-editor", type: "custom_gpt" },
+    { id: "market-analysis-gpt", name: "Market Analysis GPT", url: "https://chatgpt.com/g/g-iPIqg3Sf1-market-analysis-gpt", type: "custom_gpt" },
+    { id: "10-k-wizard", name: "10-K Wizard", url: "https://chatgpt.com/g/g-S0dTMpczx-10-k-wizard", type: "custom_gpt" }
+];
 let popupWindowId = null;
 const sentTabs = new Set();
 
@@ -13,11 +21,7 @@ function createContextMenu() {
         chrome.contextMenus.create({
             id: "wsj-translate",
             title: "WSJ 金融精译",
-            contexts: ["all"],
-            documentUrlPatterns: [
-                "http://127.0.0.1/*",
-                "http://localhost/*"
-            ]
+            contexts: ["all"]
         }, () => {
             if (chrome.runtime.lastError) {
                 console.error("[WSJ] context menu create failed:", chrome.runtime.lastError.message);
@@ -30,10 +34,20 @@ function createContextMenu() {
 
 createContextMenu();
 
+async function ensureProcessors() {
+    const saved = await chrome.storage.local.get(["gptPresetsInitialized", "gptProcessors", "gptUrl"]);
+    if (saved.gptPresetsInitialized && Array.isArray(saved.gptProcessors)) return saved.gptProcessors;
+    const processors = DEFAULT_PROCESSORS.map((item) => ({ ...item }));
+    if (saved.gptUrl) processors[0].url = saved.gptUrl;
+    await chrome.storage.local.set({ gptProcessors: processors, gptPresetsInitialized: true, selectedProcessorId: "builtin-translation" });
+    return processors;
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
     createContextMenu();
     const saved = await chrome.storage.local.get("gptUrl");
     if (!saved.gptUrl) await chrome.storage.local.set({ gptUrl: DEFAULT_GPT_URL });
+    await ensureProcessors();
 });
 chrome.runtime.onStartup.addListener(() => {
     createContextMenu();
@@ -42,7 +56,7 @@ chrome.runtime.onStartup.addListener(() => {
 function validGptUrl(value) {
     try {
         const url = new URL(value);
-        return (url.hostname === "chatgpt.com" || url.hostname.endsWith(".chatgpt.com")) && url.pathname.startsWith("/g/");
+        return url.protocol === "https:" && url.hostname === "chatgpt.com" && url.pathname.startsWith("/g/");
     } catch (_) {
         return false;
     }
@@ -148,6 +162,27 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
     if (message.type === "getSettings") {
         chrome.storage.local.get({ gptUrl: DEFAULT_GPT_URL }).then(sendResponse);
+        return true;
+    }
+    if (message.type === "getProcessors") {
+        Promise.all([ensureProcessors(), chrome.storage.local.get("selectedProcessorId")]).then(([processors, saved]) => {
+            sendResponse({ processors, selectedProcessorId: saved.selectedProcessorId || "builtin-translation" });
+        });
+        return true;
+    }
+    if (message.type === "saveProcessors") {
+        const processors = Array.isArray(message.processors) ? message.processors : [];
+        if (!processors.some((item) => item.id === "builtin-translation" && item.type === "builtin")) {
+            sendResponse({ ok: false, error: "必须保留内置处理器“金融精译”。" });
+        } else if (processors.some((item) => item.type === "custom_gpt" && !validGptUrl(item.url))) {
+            sendResponse({ ok: false, error: "GPT 链接无效，应为 chatgpt.com/g/ 开头的链接。" });
+        } else {
+            chrome.storage.local.set({ gptProcessors: processors, gptPresetsInitialized: true }).then(() => sendResponse({ ok: true }));
+        }
+        return true;
+    }
+    if (message.type === "saveSelectedProcessor") {
+        chrome.storage.local.set({ selectedProcessorId: message.processorId || "builtin-translation" }).then(() => sendResponse({ ok: true }));
         return true;
     }
     if (message.type === "saveSettings") {
