@@ -31,10 +31,18 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
     const selectedText = info.selectionText || "";
     if (!selectedText.trim()) return;
 
+    let articleContext = null;
+    try {
+        articleContext = await chrome.tabs.sendMessage(info.tabId, { type: "getArticleContext" });
+    } catch (_) {
+        // Content script may be unavailable; selection-only V1.1.4 flow remains valid.
+    }
+
     const requestId = crypto.randomUUID();
     await chrome.storage.local.set({ ["request_" + requestId]: {
         requestId,
         selectedText,
+        articleContext,
         mode: "wsj",
         customInstruction: "",
         createdAt: Date.now()
