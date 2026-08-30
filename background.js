@@ -1,6 +1,8 @@
 const DEFAULT_GPT_URL = "https://chatgpt.com/g/g-6a93053024688191a8052b050c3b114c-wsj-jin-rong-jing-yi";
+const STANDARD_CHAT_URL = "https://chatgpt.com/";
 const DEFAULT_PROCESSORS = [
     { id: "builtin-translation", name: "金融精译", type: "builtin", url: DEFAULT_GPT_URL },
+    { id: "standard-chat", name: "ChatGPT 普通对话", type: "standard-chat", url: STANDARD_CHAT_URL },
     { id: "investment-research-assistant", name: "Investment Research Assistant", url: "https://chatgpt.com/g/g-LSloWvsWy-investment-research-assistant", type: "custom_gpt" },
     { id: "equity-research-analyst", name: "Equity Research Analyst", url: "https://chatgpt.com/g/g-X6FymI6XX-equity-research-analyst-generative-ai-persona", type: "custom_gpt" },
     { id: "financial-news-editor", name: "Financial News Editor", url: "https://chatgpt.com/g/g-70OQniJ66-financial-news-editor", type: "custom_gpt" },
@@ -12,12 +14,19 @@ const DEFAULT_TASK_DEFAULTS = {
     "article-speed-read": "investment-research-assistant",
     "investment-logic": "equity-research-analyst",
     "fund-manager": "investment-research-assistant",
-    "logic-critique": "equity-research-analyst",
+    "logic-critique": "standard-chat",
     "company-industry": "investment-research-assistant",
-    "fact-check": "investment-research-assistant",
+    "fact-check": "standard-chat",
     "financial-valuation": "10-k-wizard",
+    "research-follow-up": "standard-chat"
+};
+const LEGACY_TASK_DEFAULTS = {
+    ...DEFAULT_TASK_DEFAULTS,
+    "logic-critique": "equity-research-analyst",
+    "fact-check": "investment-research-assistant",
     "research-follow-up": "investment-research-assistant"
 };
+const TASK_DEFAULTS_VERSION = 2;
 let popupWindowId = null;
 const sentTabs = new Set();
 
@@ -47,17 +56,29 @@ createContextMenu();
 
 async function ensureProcessors() {
     const saved = await chrome.storage.local.get(["gptPresetsInitialized", "gptProcessors", "gptUrl"]);
-    if (saved.gptPresetsInitialized && Array.isArray(saved.gptProcessors)) return saved.gptProcessors;
+    if (saved.gptPresetsInitialized && Array.isArray(saved.gptProcessors)) {
+        if (saved.gptProcessors.some((item) => item.id === "standard-chat")) return saved.gptProcessors;
+        const processors = [{ ...DEFAULT_PROCESSORS.find((item) => item.id === "standard-chat") }, ...saved.gptProcessors];
+        await chrome.storage.local.set({ gptProcessors: processors });
+        return processors;
+    }
     const processors = DEFAULT_PROCESSORS.map((item) => ({ ...item }));
     if (saved.gptUrl) processors[0].url = saved.gptUrl;
     await chrome.storage.local.set({ gptProcessors: processors, gptPresetsInitialized: true, selectedProcessorId: "builtin-translation" });
     return processors;
 }
 async function ensureTaskDefaults() {
-    const saved = await chrome.storage.local.get("researchTaskDefaults");
+    const saved = await chrome.storage.local.get(["researchTaskDefaults", "researchTaskDefaultsVersion"]);
     const current = saved.researchTaskDefaults && typeof saved.researchTaskDefaults === "object" ? saved.researchTaskDefaults : {};
     const merged = { ...DEFAULT_TASK_DEFAULTS, ...current };
-    if (JSON.stringify(current) !== JSON.stringify(merged)) await chrome.storage.local.set({ researchTaskDefaults: merged });
+    if (Number(saved.researchTaskDefaultsVersion || 0) < TASK_DEFAULTS_VERSION) {
+        for (const taskId of Object.keys(DEFAULT_TASK_DEFAULTS)) {
+            if (!(taskId in current) || current[taskId] === LEGACY_TASK_DEFAULTS[taskId]) merged[taskId] = DEFAULT_TASK_DEFAULTS[taskId];
+        }
+    }
+    if (JSON.stringify(current) !== JSON.stringify(merged) || Number(saved.researchTaskDefaultsVersion || 0) < TASK_DEFAULTS_VERSION) {
+        await chrome.storage.local.set({ researchTaskDefaults: merged, researchTaskDefaultsVersion: TASK_DEFAULTS_VERSION });
+    }
     return merged;
 }
 async function getCustomTasks() {
@@ -191,6 +212,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const processors = Array.isArray(message.processors) ? message.processors : [];
         if (!processors.some((item) => item.id === "builtin-translation" && item.type === "builtin")) {
             sendResponse({ ok: false, error: "必须保留内置处理器“金融精译”。" });
+        } else if (!processors.some((item) => item.id === "standard-chat" && item.type === "standard-chat" && item.name === "ChatGPT 普通对话" && item.url === STANDARD_CHAT_URL)) {
+            sendResponse({ ok: false, error: "必须保留系统处理器“ChatGPT 普通对话”。" });
         } else if (processors.some((item) => item.type === "custom_gpt" && !validGptUrl(item.url))) {
             sendResponse({ ok: false, error: "GPT 链接无效，应为 chatgpt.com/g/ 开头的链接。" });
         } else {
@@ -301,7 +324,7 @@ function broadcast(message) { chrome.runtime.sendMessage(message).catch(() => {}
 
 async function launchAutomation(message) {
     const url = (message.gptUrl || "").trim();
-    if (!validGptUrl(url)) return { ok: false, error: "GPT 链接无效，请先保存正确链接。" };
+    if (url !== STANDARD_CHAT_URL && !validGptUrl(url)) return { ok: false, error: "GPT 链接无效，请先保存正确链接。" };
     const taskId = crypto.randomUUID();
     const tab = await chrome.tabs.create({ url, active: true });
     const task = { taskId, requestId: message.requestId, prompt: message.prompt, tabId: tab.id, createdAt: Date.now() };

@@ -24,7 +24,6 @@ const processorError = document.getElementById("processorError");
 const taskEditor = document.getElementById("taskEditor");
 const taskName = document.getElementById("taskName");
 const taskPrompt = document.getElementById("taskPrompt");
-const taskProcessorSelect = document.getElementById("taskProcessorSelect");
 const taskError = document.getElementById("taskError");
 const editTaskButton = document.getElementById("editTaskButton");
 const deleteTaskButton = document.getElementById("deleteTaskButton");
@@ -74,7 +73,6 @@ function renderResearchTasks() {
     const custom = customTasks.some((task) => task.id === modeElement.value);
     editTaskButton.hidden = !custom;
     deleteTaskButton.hidden = !custom;
-    taskProcessorSelect.replaceChildren(...processors.map((item) => new Option(item.name, item.id)));
 }
 function applyTaskDefault() {
     const task = researchTasks.find((item) => item.id === modeElement.value);
@@ -88,7 +86,6 @@ function openTaskEditor(task = null) {
     editingTaskId = task?.id || null;
     taskName.value = task?.name || "";
     taskPrompt.value = task?.prompt || "";
-    taskProcessorSelect.value = task?.defaultProcessorId || selectedProcessorId || processors[0]?.id || "";
     taskError.textContent = "";
     taskEditor.hidden = false;
     taskName.focus();
@@ -97,8 +94,9 @@ function closeTaskEditor() { taskEditor.hidden = true; editingTaskId = null; tas
 function saveTask() {
     const name = taskName.value.trim();
     const prompt = taskPrompt.value.trim();
-    const defaultProcessorId = taskProcessorSelect.value;
     if (!name || !prompt) return taskError.textContent = "任务名称和 Research Prompt 不能为空。";
+    const existingTask = customTasks.find((item) => item.id === editingTaskId);
+    const defaultProcessorId = existingTask?.defaultProcessorId || selectedProcessorId || "standard-chat";
     const task = { id: editingTaskId || (crypto.randomUUID ? crypto.randomUUID() : "task-" + Date.now()), name, prompt, defaultProcessorId, type: "custom" };
     sendMessage({ type: "saveResearchTask", task }, (result) => {
         if (!result?.ok) return taskError.textContent = result?.error || "任务保存失败。";
@@ -233,25 +231,6 @@ processorSelect.addEventListener("change", () => {
 document.getElementById("addProcessorButton").addEventListener("click", () => openEditor());
 document.getElementById("saveProcessorButton").addEventListener("click", saveProcessor);
 document.getElementById("cancelProcessorButton").addEventListener("click", closeEditor);
-document.getElementById("setDefaultProcessorButton").addEventListener("click", () => {
-    const customTask = customTasks.find((task) => task.id === modeElement.value);
-    if (customTask) {
-        sendMessage({ type: "saveResearchTask", task: { ...customTask, defaultProcessorId: selectedProcessorId } }, (result) => {
-            if (!result?.ok) return showStatus(result?.error || "任务默认 GPT 保存失败。" );
-            customTasks = result.customTasks || customTasks;
-            researchTasks = [...researchTasks.filter((item) => item.type === "system"), ...customTasks];
-            renderResearchTasks();
-            applyTaskDefault();
-            showStatus("已将当前 GPT 设为此 Research Task 默认。" );
-        });
-        return;
-    }
-    sendMessage({ type: "saveTaskDefault", taskId: modeElement.value, processorId: selectedProcessorId }, (result) => {
-        if (!result?.ok) return showStatus(result?.error || "任务默认 GPT 保存失败。" );
-        taskDefaults = result.taskDefaults || taskDefaults;
-        showStatus("已将当前 GPT 设为此 Research Task 默认。" );
-    });
-});
 editTaskButton.addEventListener("click", () => openTaskEditor(customTasks.find((task) => task.id === modeElement.value)));
 deleteTaskButton.addEventListener("click", deleteTask);
 document.getElementById("saveTaskButton").addEventListener("click", saveTask);
@@ -269,8 +248,8 @@ document.getElementById("copyOpenButton").addEventListener("click", async () => 
     let copied = true;
     try { await navigator.clipboard.writeText(prompt); } catch (_) { copied = false; }
     const processor = selectedProcessor();
-    const languageRequirement = processor?.type === "custom_gpt" ? "请使用简体中文与我交流和回答。分析过程中可以保留公司名称、产品名称、财务指标及必要的专业术语英文原文。\n\n" : "";
-    sendMessage({ type: "launchAutomation", requestId, prompt: languageRequirement + prompt, gptUrl: processor?.url || "" }, (result) => {
+    const languageRequirement = processor?.type === "custom_gpt" || processor?.type === "standard-chat" ? "请使用简体中文与我交流和回答。分析过程中可以保留公司名称、产品名称、财务指标及必要的专业术语英文原文。\n\n" : "";
+    sendMessage({ type: "launchAutomation", requestId, prompt: languageRequirement + prompt, gptUrl: processor?.url || "", processorType: processor?.type || "" }, (result) => {
         if (!result?.ok) {
             showStatus((copied ? "自动发送启动失败：" : "Prompt 复制失败，") + (result?.error || "请在 ChatGPT 页面按 Ctrl+V 后发送。"));
         } else {

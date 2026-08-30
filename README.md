@@ -4,9 +4,9 @@
 
 当前版本：
 
-Manifest V1.1.5；PRA V1.3 task management update
+Manifest V1.1.5；PRA V1.4
 
-PRA 从原有财经翻译工具逐步扩展为个人投资研究助手。它将网页选中的材料或支持页面中的整篇文章，交给用户选择的 Custom GPT Processor 执行。
+PRA 从原有财经翻译工具逐步扩展为个人投资研究助手。它将网页选中的材料或支持页面中的整篇文章，交给用户选择的 AI Processor 执行。AI Processor 可以是 ChatGPT 普通对话、系统预置 GPT 或用户自定义 GPT。
 
 ## 已实现
 
@@ -36,15 +36,16 @@ PRA 从原有财经翻译工具逐步扩展为个人投资研究助手。它将�
 8. 财务 / 盈利 / 估值分析：分析盈利驱动、情景和估值隐含预期。
 9. 研究跟进 / 下一步行动：形成可执行的 P0/P1/P2 研究计划。
 
-前 9 项是受保护的系统任务，拥有稳定 ID、完整任务 Prompt 和默认 GPT Processor 关系；用户还可以通过“＋新增研究任务”持续建立自己的任务。自定义任务可以保存、编辑、删除，并为每项任务选择独立的默认 Processor。系统任务不会被自定义任务覆盖。
+前 9 项是受保护的系统任务，拥有稳定 ID、完整任务 Prompt 和默认 AI Processor 关系；用户还可以通过“＋新增研究任务”持续建立自己的任务。自定义任务可以保存、编辑、删除。系统任务不会被自定义任务覆盖。
 
 ### 3. GPT Processor
 
-右侧 GPT Processor 决定“谁来做”。Research Task 与 GPT Processor 是两个独立维度；默认联动只是推荐，用户可以手动选择其他 GPT，也可以把当前 GPT 设为某项任务的默认处理器。
+右侧 AI Processor 决定“谁来做”。Research Task 与 AI Processor 是两个独立维度；系统会根据任务提供推荐值，用户只需在右侧下拉菜单中直接选择实际执行的 Processor。
 
 支持：
 
 - 预置 GPT；
+- 系统内置“ChatGPT 普通对话”（`https://chatgpt.com/`）；
 - 新增、编辑、删除自定义 GPT；
 - 修改 GPT URL；
 - 严格校验 `https://chatgpt.com/g/...`；
@@ -52,10 +53,26 @@ PRA 从原有财经翻译工具逐步扩展为个人投资研究助手。它将�
 - 通过 `gptPresetsInitialized` 避免更新覆盖用户配置；
 - 删除 GPT 时自动修复相关任务的默认 Processor 引用。
 
+“ChatGPT 普通对话”和“金融精译”是受保护的系统 Processor，不可删除或修改；用户自定义 GPT 仍可维护。
+
+V1.4 系统推荐的默认关系为：
+
+- 财经精译 → 金融精译
+- 财经文章速读 → Investment Research Assistant
+- 投资逻辑分析 → Equity Research Analyst
+- 基金经理视角 → Investment Research Assistant
+- 投资逻辑质疑 → ChatGPT 普通对话
+- 公司 / 行业研究 → Investment Research Assistant
+- 事实与数据核查 → ChatGPT 普通对话
+- 财务 / 盈利 / 估值分析 → 10-K Wizard
+- 研究跟进 / 下一步行动 → ChatGPT 普通对话
+
+这些关系只是系统推荐。用户可以在右侧 AI Processor 下拉菜单中直接切换执行入口；历史 `defaultProcessorId` 配置继续兼容，已有用户配置不会因升级被覆盖。
+
 ### 4. 自定义 Research Task
 
 - 自定义任务保存在 `chrome.storage.local`，扩展重载、浏览器重启和更新不会覆盖。
-- 自定义任务与 GPT Processor 解耦，可以分别选择和修改默认 Processor。
+- 自定义任务与 AI Processor 解耦，可以在主界面直接选择执行 Processor。
 - 系统预置任务只读且不可删除；自定义任务可编辑、删除。
 
 ### 5. Article Provider 数据结构
@@ -81,10 +98,10 @@ PRA 从原有财经翻译工具逐步扩展为个人投资研究助手。它将�
 ## 工作流
 
 1. 在网页中选择文字，或在支持的 Reader 页面使用全文入口。
-2. 右键选择“WSJ 金融精译”。
+2. 右键选择“PRA · 个人研究助手”。
 3. 在左侧选择 Research Task。
-4. 右侧自动推荐默认 GPT，用户可以手动更换。
-5. 插件生成任务 Prompt，打开对应 ChatGPT GPT。
+4. 右侧自动推荐默认 AI Processor，用户可以手动更换。
+5. 插件生成任务 Prompt，打开对应 ChatGPT 入口。
 6. 等待输入框和 Send button 可用后自动提交。
 
 ## ResearchReader Portable HTTP Reader
@@ -129,13 +146,19 @@ ChatGPT 页面为：
 - Laxinwen 全文链路：代码已实现，未将其表述为最终 Opera 端到端实测成功。
 - ResearchReader Portable HTTP Reader：已验证。
 
-PRA V1.3 仍在开发中；9 项 Research Task 与 Processor 默认联动已加入代码，完整 Opera 端到端覆盖仍需继续验证。
+PRA V1.4 的普通 ChatGPT Processor 与 9 项任务默认关系已加入代码；ChatGPT 自动提交机制沿用已验证的流程。完整 Opera 端到端覆盖仍需继续验证。
 
 ## 安装 / 更新
 
 在 Opera 打开 `opera://extensions`，开启开发者模式，选择“加载已解压的扩展程序”，选择本目录。更新文件后点击扩展的“重新加载”。
 
 ## 版本历史
+
+### PRA V1.4
+
+- 增加系统内置 Processor“ChatGPT 普通对话”。
+- 调整 9 个系统 Research Task 的推荐 Processor 关系。
+- 保持自定义 Task、Custom GPT 与原有 ChatGPT 自动提交机制兼容。
 
 ### PRA V1.3 development
 
