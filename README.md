@@ -4,7 +4,7 @@
 
 当前版本：
 
-Manifest V1.1.5；PRA V1.4
+Manifest V1.1.5；PRA V1.5
 
 PRA 从原有财经翻译工具逐步扩展为个人投资研究助手。它将网页选中的材料或支持页面中的整篇文章，交给用户选择的 AI Processor 执行。AI Processor 可以是 ChatGPT 普通对话、系统预置 GPT 或用户自定义 GPT。
 
@@ -95,13 +95,21 @@ V1.4 系统推荐的默认关系为：
 
 插件等待输入框，填入 Prompt，等待 Send button 可用后执行 `button.click()`。当前版本只自动提交 Prompt，不自动读取 ChatGPT 回复。
 
+## Popup 与 Extension Options
+
+Popup 是日常研究执行工作台，只保留原文、Research Task、AI Processor 和三个执行按钮。完整 Prompt、Processor 管理及自定义 Research Task 管理位于浏览器标准 Extension Options 页面。
+
+在 Opera 的扩展管理页面中打开本扩展的“扩展选项”即可进入 PRA 配置中心。Options 页面支持自定义 GPT 和自定义 Research Task 的新增、编辑、删除；系统 Processor 与 9 个系统任务受到保护。
+
+Popup 通过 `overflow-y: auto` 支持小屏幕滚动，核心执行控件位于主要输入内容之后。
+
 ## 工作流
 
 1. 在网页中选择文字，或在支持的 Reader 页面使用全文入口。
 2. 右键选择“PRA · 个人研究助手”。
-3. 在左侧选择 Research Task。
-4. 右侧自动推荐默认 AI Processor，用户可以手动更换。
-5. 插件生成任务 Prompt，打开对应 ChatGPT 入口。
+3. 在 Popup 中选择 Research Task。
+4. 右侧自动推荐默认 AI Processor，用户可以直接更换。
+5. 插件在内部生成任务 Prompt，打开对应 ChatGPT 入口。
 6. 等待输入框和 Send button 可用后自动提交。
 
 ## ResearchReader Portable HTTP Reader
@@ -153,6 +161,13 @@ PRA V1.4 的普通 ChatGPT Processor 与 9 项任务默认关系已加入代码�
 在 Opera 打开 `opera://extensions`，开启开发者模式，选择“加载已解压的扩展程序”，选择本目录。更新文件后点击扩展的“重新加载”。
 
 ## 版本历史
+
+### PRA V1.5
+
+- Popup 与配置中心分离。
+- 增加标准 Extension Options 页面。
+- 将 AI Processor 与自定义 Research Task 管理迁移至 Options 页面。
+- 保持 V1.4 的 storage、Processor、Task 和 ChatGPT 自动提交兼容。
 
 ### PRA V1.4
 

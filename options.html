@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PRA 设置</title>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:28px;max-width:980px;font-family:"Microsoft YaHei",Arial,sans-serif;background:#f6f7f9;color:#202124}h1{margin:0 0 8px;font-size:25px}h2{margin:0 0 14px;font-size:19px}.intro{color:#68707d;margin-bottom:24px}.card{background:#fff;border:1px solid #d8dce2;border-radius:10px;padding:18px;margin-bottom:20px}.rows{display:grid;gap:9px}.row{display:flex;gap:9px;align-items:center;border-top:1px solid #edf0f3;padding-top:9px}.row:first-child{border-top:0;padding-top:0}.row strong{flex:1}.meta{color:#68707d;font-size:12px}.form{display:grid;gap:9px;margin-top:14px}.form input,.form textarea{width:100%;padding:9px;border:1px solid #c9ced6;border-radius:7px;font:inherit}.form textarea{min-height:120px;resize:vertical}.actions{display:flex;gap:8px}.actions button{flex:0 0 auto}.button{padding:8px 12px;border:0;border-radius:7px;cursor:pointer;font:inherit;background:#e7e9ed}.primary{background:#1f2937;color:#fff}.danger{color:#b42318}.status{margin-top:12px;color:#68707d;font-size:13px}.error{color:#b42318;font-size:13px}.protected{color:#68707d;font-size:12px}.defaults{display:grid;gap:5px;font-size:13px}.defaults div{display:flex;gap:10px}.defaults span:first-child{flex:1}
+</style>
+</head>
+<body>
+<h1>PRA · 个人研究助手</h1>
+<div class="intro">配置中心：管理 AI Processor 与自定义 Research Task。系统内置项目受到保护。</div>
+<section class="card"><h2>AI Processor</h2><div id="processorRows" class="rows"></div><div id="processorForm" class="form" hidden><input id="processorName" placeholder="GPT 名称"><input id="processorUrl" placeholder="https://chatgpt.com/g/g-..."><div class="actions"><button id="saveProcessor" class="button primary">保存</button><button id="cancelProcessor" class="button">取消</button></div><div id="processorError" class="error"></div></div><button id="addProcessor" class="button" type="button">＋ 添加自定义 GPT</button></section>
+<section class="card"><h2>Research Task</h2><div id="taskRows" class="rows"></div><div id="taskForm" class="form" hidden><input id="taskName" placeholder="任务名称"><textarea id="taskPrompt" placeholder="Research Prompt"></textarea><div class="actions"><button id="saveTask" class="button primary">保存</button><button id="cancelTask" class="button">取消</button></div><div id="taskError" class="error"></div></div><button id="addTask" class="button" type="button">＋ 新增 Research Task</button></section>
+<section class="card"><h2>系统默认 Processor 推荐</h2><div id="defaultRows" class="defaults"></div><div class="protected">默认关系仅用于 Popup 自动推荐；用户可在 Popup 右侧直接切换实际执行 Processor。</div></section>
+<div id="status" class="status">正在加载……</div>
+<script src="research-tasks.js"></script><script src="options.js"></script>
+</body>
+</html>
