@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "WSJ 金融精译",
-  "version": "1.1.5",
+  "name": "PRA · 个人研究助手",
+  "version": "1.5.0",
   "description": "选中文字后生成 Prompt，并自动填入和发送到 WSJ 金融精译 GPT。",
   "permissions": ["contextMenus", "tabs", "storage"],
   "host_permissions": ["https://chatgpt.com/*", "https://*.chatgpt.com/*", "http://127.0.0.1/*", "http://localhost/*"],
   "background": {"service_worker": "background.js"},
+  "options_page": "options.html",
   "content_scripts": [{
     "matches": ["https://chatgpt.com/*", "https://*.chatgpt.com/*", "http://127.0.0.1/*", "http://localhost/*"],
     "js": ["chatgpt-content.js"],

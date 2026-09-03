@@ -11,17 +11,12 @@
 </head>
 <body>
 <h1>PRA · 个人研究助手</h1>
-<div class="section"><div class="label">原文</div><div id="original" class="box original">正在读取……</div></div>
+<div class="section"><div class="label">原文 / 当前输入</div><div id="original" class="box original">正在读取……</div></div>
 <div class="section controls">
 <label>Research Task<select id="mode"></select></label>
 <label>AI 处理器<select id="processorSelect"></select></label>
 </div>
-<div class="buttons"><button id="editTaskButton" type="button" hidden>编辑此任务</button><button id="deleteTaskButton" type="button" hidden>删除此任务</button></div>
-<div id="taskEditor" class="processor-editor" hidden><input id="taskName" placeholder="研究任务名称"><textarea id="taskPrompt" class="custom" placeholder="Research Prompt"></textarea><div class="buttons"><button id="saveTaskButton" type="button">保存</button><button id="cancelTaskButton" type="button">取消</button></div><div id="taskError" class="error"></div></div>
-<textarea id="customInstruction" class="custom" placeholder="输入额外翻译要求……" hidden></textarea>
-<div id="promptSection" class="section"><div class="label">研究 Prompt</div><div id="prompt" class="box prompt-box">正在生成 Prompt……</div><div class="buttons"><button id="copyOpenButton">复制 Prompt 并打开 GPT</button><button id="copyPromptButton">复制 Prompt</button></div><div class="buttons"><button id="openGPTButton">打开 PRA</button></div></div>
-<div id="processorManagement" class="section"><div class="label">AI Processor 管理</div><div id="processorList" class="processor-list"></div><button id="addProcessorButton" type="button">＋ 添加自定义 GPT</button><div id="processorEditor" class="processor-editor" hidden><input id="processorName" placeholder="GPT 名称"><input id="processorUrl" type="url" placeholder="https://chatgpt.com/g/g-..."><div class="buttons"><button id="saveProcessorButton" type="button">保存</button><button id="cancelProcessorButton" type="button">取消</button></div><div id="processorError" class="error"></div></div><div class="settings-note">自定义 GPT 必须使用 https://chatgpt.com/g/ 开头的地址。</div></div>
-<div class="section"><div class="label">中文译文</div><textarea id="result" class="result-box" placeholder="复制 Prompt 后，在 ChatGPT 中发送。获得译文后可粘贴到这里。"></textarea><div class="buttons"><button id="copyResultButton">复制译文</button><button id="resetButton">重新翻译</button></div></div>
+<div class="section"><div class="buttons"><button id="copyOpenButton">复制 Prompt 并打开 GPT</button><button id="copyPromptButton">复制 Prompt</button></div><div class="buttons"><button id="openGPTButton">打开 PRA</button></div></div>
 <div id="status" class="status">已获取选中文字。</div>
 <script src="research-tasks.js"></script><script src="popup.js"></script>
 </body>
