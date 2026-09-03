@@ -27,7 +27,6 @@ const LEGACY_TASK_DEFAULTS = {
     "research-follow-up": "investment-research-assistant"
 };
 const TASK_DEFAULTS_VERSION = 2;
-let popupWindowId = null;
 const sentTabs = new Set();
 
 function createContextMenu() {
@@ -170,25 +169,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     const popupUrl = chrome.runtime.getURL("popup.html?requestId=" + encodeURIComponent(requestId));
     console.log("[WSJ] popup URL", popupUrl);
     try {
-        const existing = popupWindowId === null ? null : await chrome.windows.get(popupWindowId, { populate: true });
-        if (existing?.tabs?.[0]?.id) {
-            await chrome.tabs.update(existing.tabs[0].id, { url: popupUrl, active: true });
-            return;
-        }
-    } catch (_) {
-        popupWindowId = null;
-    }
-    try {
-        const popup = await chrome.windows.create({ url: popupUrl, type: "popup", width: 720, height: 820 });
-        popupWindowId = popup.id;
-        console.log("[WSJ] popup window created", { windowId: popupWindowId });
+        const popup = await chrome.windows.create({ url: popupUrl, type: "popup", width: 720, height: 820, focused: true });
+        console.log("[WSJ] popup window created", { windowId: popup.id, focused: true });
     } catch (error) {
         console.error("[WSJ] popup window create failed:", error.message);
     }
-});
-
-chrome.windows.onRemoved.addListener((windowId) => {
-    if (windowId === popupWindowId) popupWindowId = null;
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
