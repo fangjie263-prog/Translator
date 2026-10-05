@@ -29,27 +29,37 @@ const LEGACY_TASK_DEFAULTS = {
 };
 const TASK_DEFAULTS_VERSION = 2;
 const sentTabs = new Set();
+let contextMenuInitPromise = null;
 
 function createContextMenu() {
+    if (contextMenuInitPromise) return contextMenuInitPromise;
     console.log("[WSJ] createContextMenu started");
-    chrome.contextMenus.removeAll(() => {
-        if (chrome.runtime.lastError) {
-            console.error("[WSJ] contextMenus.removeAll:", chrome.runtime.lastError.message);
-        } else {
-            console.log("[WSJ] contextMenus.removeAll completed");
-        }
-        chrome.contextMenus.create({
-            id: "wsj-translate",
-            title: "PRA · 个人研究助手",
-            contexts: ["all"]
-        }, () => {
+    contextMenuInitPromise = new Promise((resolve) => {
+        chrome.contextMenus.removeAll(() => {
             if (chrome.runtime.lastError) {
-                console.error("[WSJ] context menu create failed:", chrome.runtime.lastError.message);
+                console.error("[WSJ] contextMenus.removeAll failed:", chrome.runtime.lastError.message);
+                resolve(false);
             } else {
-                console.log("[WSJ] context menu created: wsj-translate");
+                console.log("[WSJ] contextMenus.removeAll completed");
+                chrome.contextMenus.create({
+                    id: "wsj-translate",
+                    title: "PRA · 个人研究助手",
+                    contexts: ["all"]
+                }, () => {
+                    if (chrome.runtime.lastError) {
+                        console.error("[WSJ] context menu create failed:", chrome.runtime.lastError.message);
+                        resolve(false);
+                    } else {
+                        console.log("[WSJ] context menu created: wsj-translate");
+                        resolve(true);
+                    }
+                });
             }
         });
+    }).finally(() => {
+        contextMenuInitPromise = null;
     });
+    return contextMenuInitPromise;
 }
 
 createContextMenu();
