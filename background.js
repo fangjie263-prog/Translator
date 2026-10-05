@@ -2,6 +2,7 @@ const DEFAULT_GPT_URL = "https://chatgpt.com/g/g-6a93053024688191a8052b050c3b114
 const STANDARD_CHAT_URL = "https://chatgpt.com/";
 const DEFAULT_PROCESSORS = [
     { id: "builtin-translation", name: "金融精译", type: "builtin", url: DEFAULT_GPT_URL },
+    { id: "wsj-financial-translation-plugin", name: "WSJ 金融精译", type: "plugin", pluginName: "WSJ 金融精译", pluginId: "plugin_1bc962ea268c81919f5515c7b5f87c79" },
     { id: "standard-chat", name: "ChatGPT 普通对话", type: "standard-chat", url: STANDARD_CHAT_URL },
     { id: "investment-research-assistant", name: "Investment Research Assistant", url: "https://chatgpt.com/g/g-LSloWvsWy-investment-research-assistant", type: "custom_gpt" },
     { id: "equity-research-analyst", name: "Equity Research Analyst", url: "https://chatgpt.com/g/g-X6FymI6XX-equity-research-analyst-generative-ai-persona", type: "custom_gpt" },
@@ -56,9 +57,10 @@ createContextMenu();
 async function ensureProcessors() {
     const saved = await chrome.storage.local.get(["gptPresetsInitialized", "gptProcessors", "gptUrl"]);
     if (saved.gptPresetsInitialized && Array.isArray(saved.gptProcessors)) {
-        if (saved.gptProcessors.some((item) => item.id === "standard-chat")) return saved.gptProcessors;
-        const processors = [{ ...DEFAULT_PROCESSORS.find((item) => item.id === "standard-chat") }, ...saved.gptProcessors];
-        await chrome.storage.local.set({ gptProcessors: processors });
+        let processors = saved.gptProcessors;
+        if (!processors.some((item) => item.id === "standard-chat")) processors = [{ ...DEFAULT_PROCESSORS.find((item) => item.id === "standard-chat") }, ...processors];
+        if (!processors.some((item) => item.id === "wsj-financial-translation-plugin")) processors = [...processors, { ...DEFAULT_PROCESSORS.find((item) => item.id === "wsj-financial-translation-plugin") }];
+        if (processors.length !== saved.gptProcessors.length) await chrome.storage.local.set({ gptProcessors: processors });
         return processors;
     }
     const processors = DEFAULT_PROCESSORS.map((item) => ({ ...item }));
@@ -286,7 +288,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             if (!task) return;
             sentTabs.add(tabId);
             try {
-                await chrome.tabs.sendMessage(tabId, { type: "fillAndSend", taskId, prompt: task.prompt });
+                await chrome.tabs.sendMessage(tabId, {
+                    type: "fillAndSend",
+                    taskId,
+                    requestId: task.requestId,
+                    prompt: task.prompt,
+                    processorType: task.processorType,
+                    pluginName: task.pluginName,
+                    pluginId: task.pluginId
+                });
             } catch (error) {
                 sentTabs.delete(tabId);
                 broadcast({ type: "autoSendStatus", requestId: task.requestId, status: "failed", error: "无法向 ChatGPT 页面发送自动填充任务：" + error.message });
@@ -308,11 +318,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 function broadcast(message) { chrome.runtime.sendMessage(message).catch(() => {}); }
 
 async function launchAutomation(message) {
-    const url = (message.gptUrl || "").trim();
-    if (url !== STANDARD_CHAT_URL && !validGptUrl(url)) return { ok: false, error: "GPT 链接无效，请先保存正确链接。" };
+    const processorType = message.processorType || "custom_gpt";
+    const url = processorType === "plugin" ? STANDARD_CHAT_URL : (message.gptUrl || "").trim();
+    if (processorType !== "plugin" && url !== STANDARD_CHAT_URL && !validGptUrl(url)) return { ok: false, error: "GPT 链接无效，请先保存正确链接。" };
     const taskId = crypto.randomUUID();
     const tab = await chrome.tabs.create({ url, active: true });
-    const task = { taskId, requestId: message.requestId, prompt: message.prompt, tabId: tab.id, createdAt: Date.now() };
+    const task = {
+        taskId,
+        requestId: message.requestId,
+        prompt: message.prompt,
+        tabId: tab.id,
+        processorType,
+        pluginName: message.pluginName || "",
+        pluginId: message.pluginId || "",
+        createdAt: Date.now()
+    };
     await chrome.storage.local.set({ ["translationTask_" + taskId]: task, ["translationTab_" + tab.id]: taskId });
     return { ok: true, taskId, tabId: tab.id };
 }

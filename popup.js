@@ -83,10 +83,18 @@ document.getElementById("copyOpenButton").addEventListener("click", async () => 
     let copied = true;
     try { await navigator.clipboard.writeText(prompt); } catch (_) { copied = false; }
     const processor = selectedProcessor();
-    const languageRequirement = processor?.type === "custom_gpt" || processor?.type === "standard-chat"
+    const languageRequirement = processor?.type === "custom_gpt" || processor?.type === "standard-chat" || processor?.type === "plugin"
         ? "请使用简体中文与我交流和回答。分析过程中可以保留公司名称、产品名称、财务指标及必要的专业术语英文原文。\n\n"
         : "";
-    sendMessage({ type: "launchAutomation", requestId, prompt: languageRequirement + prompt, gptUrl: processor?.url || "" }, (result) => {
+    sendMessage({
+        type: "launchAutomation",
+        requestId,
+        prompt: languageRequirement + prompt,
+        gptUrl: processor?.url || "",
+        processorType: processor?.type || "custom_gpt",
+        pluginName: processor?.pluginName || "",
+        pluginId: processor?.pluginId || ""
+    }, (result) => {
         if (!result?.ok) showStatus((copied ? "自动发送启动失败：" : "Prompt 复制失败，") + (result?.error || "请手动打开 ChatGPT。"));
         else showStatus(copied ? "Prompt 已复制，正在打开 GPT……" : "GPT 已打开，请手动粘贴 Prompt。" );
     });

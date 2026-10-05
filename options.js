@@ -27,7 +27,7 @@
         processors.forEach((item) => {
             const row = document.createElement("div"); row.className = "row";
             const name = document.createElement("strong"); name.textContent = item.name;
-            const meta = document.createElement("span"); meta.className = "meta"; meta.textContent = item.type === "standard-chat" ? "系统 · ChatGPT 普通对话" : item.type === "builtin" ? "系统 · 内置金融精译" : item.url;
+            const meta = document.createElement("span"); meta.className = "meta"; meta.textContent = item.type === "standard-chat" ? "系统 · ChatGPT 普通对话" : item.type === "builtin" ? "系统 · 内置金融精译" : item.type === "plugin" ? `Plugin · ${item.pluginName || item.name}` : item.url;
             row.append(name, meta);
             if (item.type === "custom_gpt") {
                 const edit = document.createElement("button"); edit.className = "button"; edit.textContent = "编辑"; edit.onclick = () => openProcessor(item);

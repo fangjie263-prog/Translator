@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "PRA · 个人研究助手",
   "version": "1.5.0",
-  "description": "选中文字后生成 Prompt，并自动填入和发送到 WSJ 金融精译 GPT。",
+  "description": "PRA · 个人研究助手：从网页内容生成研究 Prompt，并发送到 ChatGPT、Custom GPT 或 Plugin。",
   "permissions": ["contextMenus", "tabs", "storage"],
   "host_permissions": ["https://chatgpt.com/*", "https://*.chatgpt.com/*", "http://127.0.0.1/*", "http://localhost/*"],
   "background": {"service_worker": "background.js"},
