@@ -4,7 +4,7 @@ let processors = [];
 let researchTasks = [];
 let taskDefaults = {};
 let customTasks = [];
-let selectedProcessorId = "builtin-translation";
+let selectedProcessorId = "standard-chat";
 let lastTaskId = "translation";
 
 const originalElement = document.getElementById("original");
@@ -22,7 +22,7 @@ function showStatus(text) { statusElement.textContent = text; }
 function renderProcessors() {
     processorSelect.replaceChildren();
     processors.forEach((item) => processorSelect.add(new Option(item.name, item.id)));
-    if (!processors.some((item) => item.id === selectedProcessorId)) selectedProcessorId = processors[0]?.id || "builtin-translation";
+    if (!processors.some((item) => item.id === selectedProcessorId)) selectedProcessorId = processors[0]?.id || "standard-chat";
     processorSelect.value = selectedProcessorId;
 }
 function renderResearchTasks() {
@@ -52,7 +52,7 @@ async function load() {
     taskDefaults = processorSettings?.taskDefaults || {};
     customTasks = processorSettings?.customTasks || [];
     researchTasks = [...tasks, ...customTasks];
-    selectedProcessorId = processorSettings?.selectedProcessorId || "builtin-translation";
+    selectedProcessorId = processorSettings?.selectedProcessorId || "standard-chat";
     const requestedTaskId = request.taskId || (request.mode === "wsj" ? "translation" : request.mode);
     lastTaskId = researchTasks.some((task) => task.id === requestedTaskId) ? requestedTaskId : (researchTasks[0]?.id || "translation");
     renderResearchTasks();

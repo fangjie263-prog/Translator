@@ -1,9 +1,8 @@
 const DEFAULT_GPT_URL = "https://chatgpt.com/g/g-6a93053024688191a8052b050c3b114c-wsj-jin-rong-jing-yi";
 const STANDARD_CHAT_URL = "https://chatgpt.com/";
 const DEFAULT_PROCESSORS = [
-    { id: "builtin-translation", name: "金融精译", type: "builtin", url: DEFAULT_GPT_URL },
-    { id: "wsj-financial-translation-plugin", name: "WSJ 金融精译", type: "plugin", pluginName: "WSJ 金融精译", pluginId: "plugin_1bc962ea268c81919f5515c7b5f87c79" },
     { id: "standard-chat", name: "ChatGPT 普通对话", type: "standard-chat", url: STANDARD_CHAT_URL },
+    { id: "wsj-financial-translation-plugin", name: "WSJ 金融精译", type: "plugin", pluginName: "WSJ 金融精译", pluginId: "plugin_1bc962ea268c81919f5515c7b5f87c79" },
     { id: "investment-research-assistant", name: "Investment Research Assistant", url: "https://chatgpt.com/g/g-LSloWvsWy-investment-research-assistant", type: "custom_gpt" },
     { id: "equity-research-analyst", name: "Equity Research Analyst", url: "https://chatgpt.com/g/g-X6FymI6XX-equity-research-analyst-generative-ai-persona", type: "custom_gpt" },
     { id: "financial-news-editor", name: "Financial News Editor", url: "https://chatgpt.com/g/g-70OQniJ66-financial-news-editor", type: "custom_gpt" },
@@ -11,7 +10,7 @@ const DEFAULT_PROCESSORS = [
     { id: "10-k-wizard", name: "10-K Wizard", url: "https://chatgpt.com/g/g-S0dTMpczx-10-k-wizard", type: "custom_gpt" }
 ];
 const DEFAULT_TASK_DEFAULTS = {
-    translation: "builtin-translation",
+    translation: "wsj-financial-translation-plugin",
     "article-speed-read": "investment-research-assistant",
     "investment-logic": "equity-research-analyst",
     "fund-manager": "investment-research-assistant",
@@ -23,11 +22,12 @@ const DEFAULT_TASK_DEFAULTS = {
 };
 const LEGACY_TASK_DEFAULTS = {
     ...DEFAULT_TASK_DEFAULTS,
+    translation: "builtin-translation",
     "logic-critique": "equity-research-analyst",
     "fact-check": "investment-research-assistant",
     "research-follow-up": "investment-research-assistant"
 };
-const TASK_DEFAULTS_VERSION = 2;
+const TASK_DEFAULTS_VERSION = 3;
 const sentTabs = new Set();
 let contextMenuInitPromise = null;
 const CONTEXT_MENU_ID = "wsj-translate";
@@ -83,18 +83,26 @@ function ensureContextMenu() {
 ensureContextMenu();
 
 async function ensureProcessors() {
-    const saved = await chrome.storage.local.get(["gptPresetsInitialized", "gptProcessors", "gptUrl"]);
+    const saved = await chrome.storage.local.get(["gptPresetsInitialized", "gptProcessors", "gptUrl", "selectedProcessorId"]);
     if (saved.gptPresetsInitialized && Array.isArray(saved.gptProcessors)) {
-        let processors = saved.gptProcessors;
-        if (!processors.some((item) => item.id === "standard-chat")) processors = [{ ...DEFAULT_PROCESSORS.find((item) => item.id === "standard-chat") }, ...processors];
-        if (!processors.some((item) => item.id === "wsj-financial-translation-plugin")) processors = [...processors, { ...DEFAULT_PROCESSORS.find((item) => item.id === "wsj-financial-translation-plugin") }];
-        if (processors.length !== saved.gptProcessors.length) await chrome.storage.local.set({ gptProcessors: processors });
+        const processors = normalizeProcessors(saved.gptProcessors);
+        const nextSelected = saved.selectedProcessorId === "builtin-translation" || !processors.some((item) => item.id === saved.selectedProcessorId)
+            ? "standard-chat"
+            : saved.selectedProcessorId;
+        if (JSON.stringify(processors) !== JSON.stringify(saved.gptProcessors) || nextSelected !== saved.selectedProcessorId) {
+            await chrome.storage.local.set({ gptProcessors: processors, selectedProcessorId: nextSelected });
+        }
         return processors;
     }
     const processors = DEFAULT_PROCESSORS.map((item) => ({ ...item }));
-    if (saved.gptUrl) processors[0].url = saved.gptUrl;
-    await chrome.storage.local.set({ gptProcessors: processors, gptPresetsInitialized: true, selectedProcessorId: "builtin-translation" });
+    await chrome.storage.local.set({ gptProcessors: processors, gptPresetsInitialized: true, selectedProcessorId: "standard-chat" });
     return processors;
+}
+function normalizeProcessors(processors) {
+    const savedById = new Map(processors.filter((item) => item?.id && item.id !== "builtin-translation").map((item) => [item.id, item]));
+    const ordered = DEFAULT_PROCESSORS.map((item) => savedById.get(item.id) || { ...item });
+    const defaultIds = new Set(DEFAULT_PROCESSORS.map((item) => item.id));
+    return [...ordered, ...processors.filter((item) => item?.id && item.id !== "builtin-translation" && !defaultIds.has(item.id))];
 }
 async function ensureTaskDefaults() {
     const saved = await chrome.storage.local.get(["researchTaskDefaults", "researchTaskDefaultsVersion"]);
@@ -219,14 +227,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
     if (message.type === "getProcessors") {
         Promise.all([ensureProcessors(), ensureTaskDefaults(), getCustomTasks(), chrome.storage.local.get("selectedProcessorId")]).then(([processors, taskDefaults, customTasks, saved]) => {
-            sendResponse({ processors, taskDefaults, customTasks, selectedProcessorId: saved.selectedProcessorId || "builtin-translation" });
+            sendResponse({ processors, taskDefaults, customTasks, selectedProcessorId: saved.selectedProcessorId || "standard-chat" });
         });
         return true;
     }
     if (message.type === "saveProcessors") {
-        const processors = Array.isArray(message.processors) ? message.processors : [];
-        if (!processors.some((item) => item.id === "builtin-translation" && item.type === "builtin")) {
-            sendResponse({ ok: false, error: "必须保留内置处理器“金融精译”。" });
+        const processors = normalizeProcessors(Array.isArray(message.processors) ? message.processors : []);
+        if (!processors.some((item) => item.id === "wsj-financial-translation-plugin" && item.type === "plugin" && item.name === "WSJ 金融精译")) {
+            sendResponse({ ok: false, error: "必须保留 Plugin 处理器“WSJ 金融精译”。" });
         } else if (!processors.some((item) => item.id === "standard-chat" && item.type === "standard-chat" && item.name === "ChatGPT 普通对话" && item.url === STANDARD_CHAT_URL)) {
             sendResponse({ ok: false, error: "必须保留系统处理器“ChatGPT 普通对话”。" });
         } else if (processors.some((item) => item.type === "custom_gpt" && !validGptUrl(item.url))) {
@@ -238,13 +246,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
                 for (const taskId of Object.keys(taskDefaults)) {
                     if (!validIds.has(taskDefaults[taskId])) {
                         const recommended = DEFAULT_TASK_DEFAULTS[taskId];
-                        taskDefaults[taskId] = validIds.has(recommended) ? recommended : "builtin-translation";
+                        taskDefaults[taskId] = validIds.has(recommended) ? recommended : "standard-chat";
                     }
                 }
                 return chrome.storage.local.get("customResearchTasks").then((customSaved) => {
                     const customTasks = Array.isArray(customSaved.customResearchTasks) ? customSaved.customResearchTasks.map((task) => ({
                         ...task,
-                        defaultProcessorId: validIds.has(task.defaultProcessorId) ? task.defaultProcessorId : "builtin-translation"
+                        defaultProcessorId: validIds.has(task.defaultProcessorId) ? task.defaultProcessorId : "standard-chat"
                     })) : [];
                     return chrome.storage.local.set({ gptProcessors: processors, gptPresetsInitialized: true, researchTaskDefaults: taskDefaults, customResearchTasks: customTasks }).then(() => sendResponse({ ok: true, taskDefaults, customTasks }));
                 });
@@ -286,7 +294,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return true;
     }
     if (message.type === "saveSelectedProcessor") {
-        chrome.storage.local.set({ selectedProcessorId: message.processorId || "builtin-translation" }).then(() => sendResponse({ ok: true }));
+        chrome.storage.local.set({ selectedProcessorId: message.processorId || "standard-chat" }).then(() => sendResponse({ ok: true }));
         return true;
     }
     if (message.type === "saveSettings") {

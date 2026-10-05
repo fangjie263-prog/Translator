@@ -2,7 +2,7 @@
     "use strict";
 
     const definitions = [
-        { id: "translation", name: "财经精译", file: "财经精译.txt", defaultProcessorId: "builtin-translation", type: "system" },
+        { id: "translation", name: "财经精译", file: "财经精译.txt", defaultProcessorId: "wsj-financial-translation-plugin", type: "system" },
         { id: "article-speed-read", name: "财经文章速读", file: "财经文章速读.txt", defaultProcessorId: "investment-research-assistant", type: "system" },
         { id: "investment-logic", name: "投资逻辑分析", file: "【研究任务：投资逻辑分析】.txt", defaultProcessorId: "equity-research-analyst", type: "system" },
         { id: "fund-manager", name: "基金经理视角", file: "【研究任务：基金经理视角】.txt", defaultProcessorId: "investment-research-assistant", type: "system" },
