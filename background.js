@@ -30,30 +30,48 @@ const LEGACY_TASK_DEFAULTS = {
 const TASK_DEFAULTS_VERSION = 2;
 const sentTabs = new Set();
 let contextMenuInitPromise = null;
+const CONTEXT_MENU_ID = "wsj-translate";
+const CONTEXT_MENU_CONFIG = { id: CONTEXT_MENU_ID, title: "PRA · 个人研究助手", contexts: ["all"] };
 
-function createContextMenu() {
+function ensureContextMenu() {
     if (contextMenuInitPromise) return contextMenuInitPromise;
-    console.log("[WSJ] createContextMenu started");
+    console.log("[WSJ] ensureContextMenu started");
     contextMenuInitPromise = new Promise((resolve) => {
-        chrome.contextMenus.removeAll(() => {
+        chrome.contextMenus.update(CONTEXT_MENU_ID, {
+            title: CONTEXT_MENU_CONFIG.title,
+            contexts: CONTEXT_MENU_CONFIG.contexts
+        }, () => {
             if (chrome.runtime.lastError) {
-                console.error("[WSJ] contextMenus.removeAll failed:", chrome.runtime.lastError.message);
-                resolve(false);
-            } else {
-                console.log("[WSJ] contextMenus.removeAll completed");
-                chrome.contextMenus.create({
-                    id: "wsj-translate",
-                    title: "PRA · 个人研究助手",
-                    contexts: ["all"]
-                }, () => {
-                    if (chrome.runtime.lastError) {
-                        console.error("[WSJ] context menu create failed:", chrome.runtime.lastError.message);
-                        resolve(false);
-                    } else {
+                const updateError = chrome.runtime.lastError.message;
+                console.warn("[WSJ] context menu update unavailable; attempting create:", updateError);
+                chrome.contextMenus.create(CONTEXT_MENU_CONFIG, () => {
+                    if (!chrome.runtime.lastError) {
                         console.log("[WSJ] context menu created: wsj-translate");
                         resolve(true);
+                        return;
                     }
+                    const createError = chrome.runtime.lastError.message;
+                    if (!/duplicate id|already exists/i.test(createError)) {
+                        console.error("[WSJ] context menu create failed:", createError);
+                        resolve(false);
+                        return;
+                    }
+                    chrome.contextMenus.update(CONTEXT_MENU_ID, {
+                        title: CONTEXT_MENU_CONFIG.title,
+                        contexts: CONTEXT_MENU_CONFIG.contexts
+                    }, () => {
+                        if (chrome.runtime.lastError) {
+                            console.error("[WSJ] context menu duplicate recovery failed:", chrome.runtime.lastError.message);
+                            resolve(false);
+                        } else {
+                            console.log("[WSJ] context menu duplicate recovered by update: wsj-translate");
+                            resolve(true);
+                        }
+                    });
                 });
+            } else {
+                console.log("[WSJ] context menu updated: wsj-translate");
+                resolve(true);
             }
         });
     }).finally(() => {
@@ -62,7 +80,7 @@ function createContextMenu() {
     return contextMenuInitPromise;
 }
 
-createContextMenu();
+ensureContextMenu();
 
 async function ensureProcessors() {
     const saved = await chrome.storage.local.get(["gptPresetsInitialized", "gptProcessors", "gptUrl"]);
@@ -100,14 +118,14 @@ async function getCustomTasks() {
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
-    createContextMenu();
+    ensureContextMenu();
     const saved = await chrome.storage.local.get("gptUrl");
     if (!saved.gptUrl) await chrome.storage.local.set({ gptUrl: DEFAULT_GPT_URL });
     await ensureProcessors();
     await ensureTaskDefaults();
 });
 chrome.runtime.onStartup.addListener(() => {
-    createContextMenu();
+    ensureContextMenu();
 });
 
 function validGptUrl(value) {
