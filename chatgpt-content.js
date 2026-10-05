@@ -40,47 +40,20 @@
 
     const normalized = (value) => (value || "").replace(/\s+/g, " ").trim().toLowerCase();
     const visibleText = (element) => normalized(element?.innerText || element?.textContent || "");
-    const hasPluginCategory = (element) => {
-        const label = normalized(element.getAttribute?.("aria-label"));
-        if (label === "插件" || label === "plugins" || label.includes("插件")) return true;
-        return [...element.querySelectorAll?.('[role="heading"], h1, h2, h3, h4, [data-category], [aria-label]') || []]
-            .some((child) => {
-                const childLabel = normalized(child.getAttribute("aria-label"));
-                const childText = visibleText(child);
-                return (childLabel === "插件" || childLabel === "plugins" || childText === "插件" || childText === "plugins");
-            });
-    };
-    const pluginResultCandidates = (scope, pluginName) => [...scope.querySelectorAll('[role="option"], [role="menuitem"], button, a, [data-testid*="plugin" i]')]
-        .filter((element) => visible(element) && visibleText(element).includes(normalized(pluginName)));
     const findPluginResult = (pluginName) => {
-        const categoryLabels = [...document.querySelectorAll('[role="heading"], h1, h2, h3, h4, [data-category], [aria-label]')]
-            .filter((element) => {
-                const label = normalized(element.getAttribute("aria-label"));
-                const text = visibleText(element);
-                return label === "插件" || label === "plugins" || text === "插件" || text === "plugins";
-            });
-        for (const label of categoryLabels) {
-            const scope = label.closest('[role="group"], section, li') || label.parentElement;
-            const candidate = scope && pluginResultCandidates(scope, pluginName)[0];
-            if (candidate) return candidate;
-        }
-        const candidates = pluginResultCandidates(document, pluginName);
-        for (const candidate of candidates) {
-            let ancestor = candidate.parentElement;
-            for (let level = 0; ancestor && level < 6; level += 1, ancestor = ancestor.parentElement) {
-                const ancestorText = visibleText(ancestor);
-                if (hasPluginCategory(ancestor) && !ancestorText.includes("定制 gpt") && !ancestorText.includes("custom gpt")) return candidate;
-            }
-        }
-        return null;
+        const pluginSection = document.querySelector('[data-mention-section-id="plugins"]');
+        if (!pluginSection || !visible(pluginSection)) return null;
+        return [...pluginSection.querySelectorAll('[data-mention-content="true"]')]
+            .find((element) => visible(element) && visibleText(element).includes(normalized(pluginName))) || null;
     };
     const isPluginChip = (element, pluginName) => {
         if (!visible(element) || !visibleText(element).includes(normalized(pluginName))) return false;
+        if (element.matches("textarea, [contenteditable=\"true\"]") || visibleText(element).startsWith("@")) return false;
         const role = element.getAttribute("role") || "";
         if (role === "option" || role === "menuitem") return false;
-        if (element.closest('[role="option"], [role="menuitem"]')) return false;
-        const marker = normalized(`${element.getAttribute("aria-label") || ""} ${element.getAttribute("data-testid") || ""} ${element.className || ""}`);
-        return role === "button" || marker.includes("plugin") || marker.includes("chip") || marker.includes("composer") || element.tagName === "SPAN";
+        if (element.closest('[role="option"], [role="menuitem"], [data-mention-section-id], [data-mention-content="true"]')) return false;
+        const marker = normalized(`${element.getAttribute("aria-label") || ""} ${element.getAttribute("data-testid") || ""} ${element.getAttribute("data-mention") || ""} ${element.className || ""}`);
+        return role === "button" || marker.includes("plugin") || marker.includes("chip") || marker.includes("mention") || marker.includes("composer");
     };
     async function waitForPluginSelected(pluginName, timeout = 10000) {
         const deadline = Date.now() + timeout;
