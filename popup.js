@@ -86,17 +86,37 @@ document.getElementById("copyOpenButton").addEventListener("click", async () => 
     const languageRequirement = processor?.type === "custom_gpt" || processor?.type === "standard-chat" || processor?.type === "plugin"
         ? "请使用简体中文与我交流和回答。分析过程中可以保留公司名称、产品名称、财务指标及必要的专业术语英文原文。\n\n"
         : "";
+    const runRequestId = crypto.randomUUID();
     sendMessage({
         type: "launchAutomation",
-        requestId,
+        requestId: runRequestId,
         prompt: languageRequirement + prompt,
         gptUrl: processor?.url || "",
+        processorId: processor?.id || "",
         processorType: processor?.type || "custom_gpt",
+        processorName: processor?.name || "",
         pluginName: processor?.pluginName || "",
         pluginId: processor?.pluginId || ""
     }, (result) => {
         if (!result?.ok) showStatus((copied ? "自动发送启动失败：" : "Prompt 复制失败，") + (result?.error || "请手动打开 ChatGPT。"));
         else showStatus(copied ? "Prompt 已复制，正在打开 GPT……" : "GPT 已打开，请手动粘贴 Prompt。" );
+    });
+});
+document.getElementById("exportDiagnosticsButton").addEventListener("click", () => {
+    showStatus("正在读取最近运行诊断日志……");
+    sendMessage({ type: "getPraAutomationDiagnosticRuns" }, (response) => {
+        if (!response?.ok) {
+            showStatus(response?.error || "读取诊断日志失败。");
+            return;
+        }
+        const content = JSON.stringify({ exportedAt: new Date().toISOString(), runs: response.runs || [] }, null, 2);
+        const objectUrl = URL.createObjectURL(new Blob([content], { type: "application/json" }));
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = `pra-diagnostics-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+        showStatus(`已导出最近 ${response.runs?.length || 0} 次运行诊断日志。`);
     });
 });
 document.getElementById("openGPTButton").addEventListener("click", () => {

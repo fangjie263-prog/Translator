@@ -32,6 +32,144 @@ const sentTabs = new Set();
 let contextMenuInitPromise = null;
 const CONTEXT_MENU_ID = "wsj-translate";
 const CONTEXT_MENU_CONFIG = { id: CONTEXT_MENU_ID, title: "PRA · 个人研究助手", contexts: ["all"] };
+const AUTOMATION_DIAGNOSTICS_KEY = "praAutomationDiagnosticRuns";
+const AUTOMATION_DIAGNOSTIC_RUN_LIMIT = 5;
+const AUTOMATION_DIAGNOSTIC_EVENT_LIMIT = 60;
+const AUTOMATION_DIAGNOSTIC_STAGES = new Set([
+    "launchAutomation.started", "launchAutomation.tab-created", "launchAutomation.task-stored",
+    "contentReady.received", "fillAndSend.sent", "fillAndSend.failed",
+    "fillAndSend.received", "run.started", "plugin.branch.started", "composer.cleared",
+    "composer.refreshed", "autocomplete.attempt.started", "autocomplete.at-entered", "autocomplete.attempt.result",
+    "autocomplete.retry.check", "autocomplete.retry.started", "autocomplete.retry.result",
+    "plugin.name.input.started", "plugin.name.input.finished", "plugin.candidate.found",
+    "plugin.candidate.lookup.failed", "plugin.candidate.click.started", "plugin.candidate.click.finished",
+    "plugin.chip.confirmed", "prompt.injection.started", "prompt.injection.finished",
+    "sendButton.lookup.started", "sendButton.lookup.finished", "message.send.started",
+    "message.send.finished", "automation.exception"
+]);
+const AUTOMATION_DIAGNOSTIC_DETAIL_KEYS = new Set([
+    "taskId", "tabId", "processorId", "processorType", "processorName", "pluginName", "pluginId",
+    "attempt", "detected", "exists", "visible", "sectionIds", "sectionId", "items",
+    "retryExecuted", "retryReason", "composerConnected", "composerVisible", "composerFocused",
+    "composerReplaced", "composerType", "valueLength", "onlyAt", "candidateCount",
+    "candidateSectionId", "candidateTagName", "candidateRole", "candidateAriaLabel",
+    "candidateListNavigationItem", "candidateMentionContent", "candidateVisible", "candidateText",
+    "chipSelector", "chipTagName", "chipDisplayName", "chipVisible", "chipPreserved",
+    "promptLength", "sendButtonFound", "sendButtonVisible", "sendButtonEnabled", "sections"
+]);
+let automationDiagnosticQueue = Promise.resolve();
+
+function boundedDiagnosticString(value, maxLength = 300) {
+    return typeof value === "string" ? value.slice(0, maxLength) : "";
+}
+
+function sanitizeDiagnosticAttributes(attributes) {
+    if (!attributes || typeof attributes !== "object" || Array.isArray(attributes)) return {};
+    const safe = {};
+    for (const [name, value] of Object.entries(attributes).slice(0, 12)) {
+        if (typeof value !== "string" || !(name === "class" || name === "role" || name === "title" || name === "type" || name.startsWith("data-") || name.startsWith("aria-"))) continue;
+        safe[name] = boundedDiagnosticString(value, 120);
+    }
+    return safe;
+}
+
+function sanitizeCandidateStructure(structure) {
+    if (!structure || typeof structure !== "object" || Array.isArray(structure)) return undefined;
+    const sanitizeNode = (node) => ({
+        tagName: boundedDiagnosticString(node?.tagName, 20),
+        attributes: sanitizeDiagnosticAttributes(node?.attributes),
+        ...(Number.isFinite(node?.svgPathCount) ? { svgPathCount: node.svgPathCount } : {})
+    });
+    return {
+        buttonAttributes: sanitizeDiagnosticAttributes(structure.buttonAttributes),
+        descendants: Array.isArray(structure.descendants) ? structure.descendants.slice(0, 12).map(sanitizeNode) : [],
+        ancestors: Array.isArray(structure.ancestors) ? structure.ancestors.slice(0, 3).map(sanitizeNode) : []
+    };
+}
+
+function sanitizeDiagnosticDetails(details) {
+    if (!details || typeof details !== "object" || Array.isArray(details)) return {};
+    const clean = {};
+    for (const [key, value] of Object.entries(details)) {
+        if (!AUTOMATION_DIAGNOSTIC_DETAIL_KEYS.has(key)) continue;
+        if (typeof value === "string") clean[key] = boundedDiagnosticString(value, key === "candidateText" ? 400 : 160);
+        else if (typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) clean[key] = value;
+        else if (key === "sectionIds" && Array.isArray(value)) {
+            clean[key] = value.filter((item) => typeof item === "string").slice(0, 10).map((item) => item.slice(0, 80));
+        } else if (key === "sections" && Array.isArray(value)) {
+            clean[key] = value.slice(0, 8).map((section) => ({
+                sectionId: boundedDiagnosticString(section?.sectionId, 80),
+                items: boundedDiagnosticString(section?.items, 80),
+                visible: Boolean(section?.visible),
+                matchingButtons: Array.isArray(section?.matchingButtons) ? section.matchingButtons.slice(0, 5).map((button) => ({
+                    tagName: boundedDiagnosticString(button?.tagName, 30),
+                    role: boundedDiagnosticString(button?.role, 50),
+                    ariaLabel: boundedDiagnosticString(button?.ariaLabel, 120),
+                    listNavigationItem: boundedDiagnosticString(button?.listNavigationItem, 40),
+                    mentionContent: boundedDiagnosticString(button?.mentionContent, 40),
+                    visible: Boolean(button?.visible),
+                    text: boundedDiagnosticString(button?.text, 400),
+                    structure: sanitizeCandidateStructure(button?.structure)
+                })) : []
+            }));
+        }
+    }
+    return clean;
+}
+
+function recordAutomationDiagnostic(requestId, stage, result, details = {}, error = "", stack = "", createRun = false) {
+    if (typeof requestId !== "string" || !requestId || !AUTOMATION_DIAGNOSTIC_STAGES.has(stage)) return Promise.resolve(false);
+    const event = {
+        requestId,
+        stage,
+        timestamp: new Date().toISOString(),
+        result: boundedDiagnosticString(result, 40),
+        details: sanitizeDiagnosticDetails(details)
+    };
+    if (error) event.error = boundedDiagnosticString(String(error), 400);
+    if (stack) event.stack = boundedDiagnosticString(String(stack), 1200);
+
+    const write = automationDiagnosticQueue.then(async () => {
+        const saved = await chrome.storage.local.get(AUTOMATION_DIAGNOSTICS_KEY);
+        const runs = Array.isArray(saved[AUTOMATION_DIAGNOSTICS_KEY]) ? saved[AUTOMATION_DIAGNOSTICS_KEY] : [];
+        let run = runs.find((item) => item?.requestId === requestId);
+        if (!run && createRun) {
+            run = { requestId, startedAt: event.timestamp, updatedAt: event.timestamp, events: [] };
+            runs.unshift(run);
+        }
+        if (!run) return false;
+        run.events = Array.isArray(run.events) ? run.events : [];
+        run.events.push(event);
+        run.events = run.events.slice(-AUTOMATION_DIAGNOSTIC_EVENT_LIMIT);
+        run.updatedAt = event.timestamp;
+        await chrome.storage.local.set({ [AUTOMATION_DIAGNOSTICS_KEY]: runs.slice(0, AUTOMATION_DIAGNOSTIC_RUN_LIMIT) });
+        return true;
+    });
+    automationDiagnosticQueue = write.catch((diagnosticError) => {
+        console.warn("[WSJ Diagnostics] log write failed", diagnosticError?.message || "unknown error");
+    });
+    return write;
+}
+
+function isPRApopupSender(sender) {
+    if (sender?.id !== chrome.runtime.id || typeof sender.url !== "string") return false;
+    try {
+        const url = new URL(sender.url);
+        return url.protocol === "chrome-extension:" && url.host === chrome.runtime.id && url.pathname === "/popup.html";
+    } catch (_) {
+        return false;
+    }
+}
+
+function isChatGPTContentSender(sender) {
+    if (sender?.id !== chrome.runtime.id || !sender.tab?.id) return false;
+    try {
+        const url = new URL(sender.url || sender.tab.url || "");
+        return url.protocol === "https:" && (url.hostname === "chatgpt.com" || url.hostname.endsWith(".chatgpt.com"));
+    } catch (_) {
+        return false;
+    }
+}
 
 function ensureContextMenu() {
     if (contextMenuInitPromise) return contextMenuInitPromise;
@@ -100,17 +238,27 @@ async function ensureProcessors() {
 }
 function normalizeProcessors(processors) {
     const savedById = new Map(processors.filter((item) => item?.id && item.id !== "builtin-translation").map((item) => [item.id, item]));
-    const ordered = DEFAULT_PROCESSORS.map((item) => savedById.get(item.id) || { ...item });
+    const ordered = DEFAULT_PROCESSORS.map((item) => item.id === "wsj-financial-translation-plugin"
+        ? { ...item }
+        : savedById.get(item.id) || { ...item });
     const defaultIds = new Set(DEFAULT_PROCESSORS.map((item) => item.id));
     return [...ordered, ...processors.filter((item) => item?.id && item.id !== "builtin-translation" && !defaultIds.has(item.id))];
 }
 async function ensureTaskDefaults() {
     const saved = await chrome.storage.local.get(["researchTaskDefaults", "researchTaskDefaultsVersion"]);
+    const processors = await ensureProcessors();
+    const validProcessorIds = new Set(processors.map((item) => item.id));
     const current = saved.researchTaskDefaults && typeof saved.researchTaskDefaults === "object" ? saved.researchTaskDefaults : {};
     const merged = { ...DEFAULT_TASK_DEFAULTS, ...current };
     if (Number(saved.researchTaskDefaultsVersion || 0) < TASK_DEFAULTS_VERSION) {
         for (const taskId of Object.keys(DEFAULT_TASK_DEFAULTS)) {
             if (!(taskId in current) || current[taskId] === LEGACY_TASK_DEFAULTS[taskId]) merged[taskId] = DEFAULT_TASK_DEFAULTS[taskId];
+        }
+    }
+    for (const taskId of Object.keys(DEFAULT_TASK_DEFAULTS)) {
+        if (!validProcessorIds.has(merged[taskId])) {
+            const canonicalDefault = DEFAULT_TASK_DEFAULTS[taskId];
+            merged[taskId] = validProcessorIds.has(canonicalDefault) ? canonicalDefault : "standard-chat";
         }
     }
     if (JSON.stringify(current) !== JSON.stringify(merged) || Number(saved.researchTaskDefaultsVersion || 0) < TASK_DEFAULTS_VERSION) {
@@ -214,7 +362,30 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === "getPraAutomationDiagnosticRuns") {
+        if (!isPRApopupSender(sender)) {
+            sendResponse({ ok: false, error: "仅 PRA Popup 可读取诊断日志。" });
+            return;
+        }
+        automationDiagnosticQueue.then(() => chrome.storage.local.get(AUTOMATION_DIAGNOSTICS_KEY)).then((saved) => {
+            const runs = Array.isArray(saved[AUTOMATION_DIAGNOSTICS_KEY]) ? saved[AUTOMATION_DIAGNOSTICS_KEY] : [];
+            sendResponse({ ok: true, runs: runs.slice(0, AUTOMATION_DIAGNOSTIC_RUN_LIMIT) });
+        }).catch(() => sendResponse({ ok: false, error: "读取诊断日志失败。" }));
+        return true;
+    }
+    if (message.type === "praAutomationDiagnosticEvent") {
+        if (!isChatGPTContentSender(sender) || !AUTOMATION_DIAGNOSTIC_STAGES.has(message.stage)) return;
+        recordAutomationDiagnostic(
+            message.requestId,
+            message.stage,
+            message.result,
+            message.details,
+            message.error,
+            message.stack
+        ).then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false }));
+        return true;
+    }
     if (message.type === "getRequest") {
         chrome.storage.local.get("request_" + message.requestId).then((result) => {
             sendResponse(result["request_" + message.requestId] || null);
@@ -311,11 +482,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return true;
     }
     if (message.type === "launchAutomation") {
-        launchAutomation(message).then(sendResponse).catch((error) => sendResponse({ ok: false, error: error.message }));
+        launchAutomation(message).then(sendResponse).catch(async (error) => {
+            await recordAutomationDiagnostic(message.requestId, "automation.exception", "failed", {
+                processorId: message.processorId || "",
+                processorType: message.processorType || "custom_gpt",
+                processorName: message.processorName || ""
+            }, error.message, error.stack).catch(() => {});
+            sendResponse({ ok: false, error: error.message });
+        });
         return true;
     }
-    if (message.type === "contentReady" && _sender.tab?.id) {
-        const tabId = _sender.tab.id;
+    if (message.type === "contentReady" && sender.tab?.id) {
+        const tabId = sender.tab.id;
         chrome.storage.local.get("translationTab_" + tabId).then(async (result) => {
             const taskId = result["translationTab_" + tabId];
             if (!taskId || sentTabs.has(tabId)) return;
@@ -323,18 +501,48 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             const task = taskResult["translationTask_" + taskId];
             if (!task) return;
             sentTabs.add(tabId);
+            recordAutomationDiagnostic(task.requestId, "contentReady.received", "success", {
+                taskId,
+                tabId,
+                processorId: task.processorId,
+                processorType: task.processorType,
+                processorName: task.processorName,
+                pluginName: task.pluginName,
+                pluginId: task.pluginId
+            }).catch(() => {});
             try {
+                console.log("[WSJ] sending fillAndSend", {
+                    tabId,
+                    taskId,
+                    requestId: task.requestId,
+                    processorType: task.processorType,
+                    pluginName: task.pluginName,
+                    pluginId: task.pluginId
+                });
                 await chrome.tabs.sendMessage(tabId, {
                     type: "fillAndSend",
                     taskId,
                     requestId: task.requestId,
                     prompt: task.prompt,
+                    processorId: task.processorId,
                     processorType: task.processorType,
+                    processorName: task.processorName,
                     pluginName: task.pluginName,
                     pluginId: task.pluginId
                 });
+                await recordAutomationDiagnostic(task.requestId, "fillAndSend.sent", "success", {
+                    taskId,
+                    tabId,
+                    processorId: task.processorId,
+                    processorType: task.processorType,
+                    processorName: task.processorName,
+                    pluginName: task.pluginName,
+                    pluginId: task.pluginId
+                }).catch(() => {});
             } catch (error) {
                 sentTabs.delete(tabId);
+                console.error("[WSJ] fillAndSend delivery failed", { tabId, taskId, requestId: task.requestId, error: error.message });
+                await recordAutomationDiagnostic(task.requestId, "fillAndSend.failed", "failed", { taskId, tabId }, error.message, error.stack).catch(() => {});
                 broadcast({ type: "autoSendStatus", requestId: task.requestId, status: "failed", error: "无法向 ChatGPT 页面发送自动填充任务：" + error.message });
             }
         });
@@ -355,20 +563,68 @@ function broadcast(message) { chrome.runtime.sendMessage(message).catch(() => {}
 
 async function launchAutomation(message) {
     const processorType = message.processorType || "custom_gpt";
+    const requestId = typeof message.requestId === "string" && message.requestId ? message.requestId : crypto.randomUUID();
+    const processorId = typeof message.processorId === "string" ? message.processorId : "";
+    const processorName = typeof message.processorName === "string" ? message.processorName : "";
+    console.log("[WSJ] launchAutomation received", {
+        requestId,
+        processorId,
+        processorType,
+        processorName,
+        pluginName: message.pluginName || "",
+        pluginId: message.pluginId || ""
+    });
+    recordAutomationDiagnostic(requestId, "launchAutomation.started", "started", {
+        processorId,
+        processorType,
+        processorName,
+        pluginName: message.pluginName || "",
+        pluginId: message.pluginId || ""
+    }, "", "", true).catch(() => {});
     const url = processorType === "plugin" ? STANDARD_CHAT_URL : (message.gptUrl || "").trim();
-    if (processorType !== "plugin" && url !== STANDARD_CHAT_URL && !validGptUrl(url)) return { ok: false, error: "GPT 链接无效，请先保存正确链接。" };
+    if (processorType !== "plugin" && url !== STANDARD_CHAT_URL && !validGptUrl(url)) {
+        const error = "GPT 链接无效，请先保存正确链接。";
+        await recordAutomationDiagnostic(requestId, "launchAutomation.started", "failed", { processorId, processorType, processorName }, error).catch(() => {});
+        return { ok: false, error };
+    }
     const taskId = crypto.randomUUID();
-    const tab = await chrome.tabs.create({ url, active: true });
+    let tab;
+    try {
+        tab = await chrome.tabs.create({ url, active: true });
+        recordAutomationDiagnostic(requestId, "launchAutomation.tab-created", "success", {
+            taskId,
+            tabId: tab.id,
+            processorId,
+            processorType,
+            processorName
+        }).catch(() => {});
+    } catch (error) {
+        await recordAutomationDiagnostic(requestId, "launchAutomation.tab-created", "failed", { taskId, processorId, processorType, processorName }, error.message, error.stack).catch(() => {});
+        throw error;
+    }
     const task = {
         taskId,
-        requestId: message.requestId,
+        requestId,
         prompt: message.prompt,
         tabId: tab.id,
+        processorId,
         processorType,
+        processorName,
         pluginName: message.pluginName || "",
         pluginId: message.pluginId || "",
         createdAt: Date.now()
     };
     await chrome.storage.local.set({ ["translationTask_" + taskId]: task, ["translationTab_" + tab.id]: taskId });
+    recordAutomationDiagnostic(requestId, "launchAutomation.task-stored", "success", { taskId, tabId: tab.id }).catch(() => {});
+    console.log("[WSJ] automation task created", {
+        tabId: tab.id,
+        taskId,
+        requestId,
+        processorId: task.processorId,
+        processorType: task.processorType,
+        processorName: task.processorName,
+        pluginName: task.pluginName,
+        pluginId: task.pluginId
+    });
     return { ok: true, taskId, tabId: tab.id };
 }
